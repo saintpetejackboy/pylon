@@ -1,0 +1,10 @@
+# Default configuration for Pylon Dashboard
+local_port = 6989
+token = "default_token"
+name = "Local Pylon"
+
+[[remote_pylons]]
+ip = "http://185.238.251.35/"
+port = 6989
+token = "remote_token"
+name = "Brinstar"
