@@ -1,10 +1,12 @@
 # Default configuration for Pylon Dashboard
 local_port = 6989
-token = "default_token"
+token = "your_default_token"
 name = "Local Pylon"
+location = "City, ST"
+description = "Some description of your pylon, visible both locally and remote when the pylon is clicked."
 
 [[remote_pylons]]
-ip = "http://185.238.251.35/"
+ip = "http://www.website.com"
 port = 6989
-token = "remote_token"
-name = "Brinstar"
+token = "some_remote_token"
+name = "Remote Pylon Name"
