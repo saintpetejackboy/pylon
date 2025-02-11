@@ -17,8 +17,9 @@ pub struct RemoteStatus {
     pub last_seen: Option<DateTime<Utc>>,
     pub data: Option<Value>, // remote metrics as JSON
     pub online: bool,
-    // New: include the name from the configuration (if any)
     pub name: Option<String>,
+    pub location: Option<String>,
+    pub description: Option<String>,
 }
 
 /// Now accepts a shutdown receiver so it can exit gracefully.
@@ -72,6 +73,8 @@ pub async fn poll_remote_pylons(
                         data: None,
                         online: false,
                         name: remote.name.clone(),
+						location: remote.location.clone(),
+						description: remote.description.clone()
                     };
                     match req {
                         Ok(resp) => {

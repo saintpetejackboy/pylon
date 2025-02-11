@@ -15,6 +15,10 @@ pub struct RemotePylonConfig {
     pub token: String,
     // New optional name for a remote pylon.
     pub name: Option<String>,
+    // New: location string (e.g. "Tampa, FL")
+    pub location: Option<String>,
+    // New: description string
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -27,6 +31,10 @@ pub struct Config {
     pub name: Option<String>,
     // A list of remote Pylon instances to poll.
     pub remote_pylons: Option<Vec<RemotePylonConfig>>,
+    // New: local description (optional)
+    pub description: Option<String>,
+    // New: local location (optional)
+    pub location: Option<String>,
 }
 
 impl Default for Config {
@@ -36,9 +44,12 @@ impl Default for Config {
             token: "default_token".into(),
             name: Some("Local Pylon".into()),
             remote_pylons: None,
+            description: None,
+            location: None,
         }
     }
 }
+
 
 pub fn load_config() -> Result<Config, config::ConfigError> {
     let settings = config::Config::builder()
@@ -85,4 +96,10 @@ pub async fn watch_config(config_arc: Arc<RwLock<Config>>, shutdown: watch::Rece
             }
         }
     }
+}
+
+pub fn save_config(config: &Config) -> Result<(), std::io::Error> {
+    let toml_str = toml::to_string_pretty(&config)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::write("config.toml", toml_str)
 }
