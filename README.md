@@ -1,6 +1,12 @@
 # Pylon Dashboard 🚀✨
 
-Pylon Dashboard is a robust, cross-platform system monitoring and peer discovery tool written in Rust. It combines real-time system metrics with a sleek, dynamic web interface to give you deep insights into both your local machine and remote peer systems. Inspired by classic sci-fi aesthetics and built with modern, asynchronous Rust, Pylon Dashboard is designed for administrators, developers, and DevOps engineers who demand both performance and clarity.
+[![Build Status](https://github.com/saintpetejackboy/pylon/actions/workflows/ci.yml/badge.svg)](https://github.com/saintpetejackboy/pylon/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Repo Size](https://img.shields.io/github/repo-size/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
+[![Issues](https://img.shields.io/github/issues/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/issues)
+[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
+
+Pylon Dashboard is a robust, cross-platform system monitoring and peer discovery tool written in **Rust** with a modern HTML/CSS/JavaScript frontend. It combines real-time system metrics with a sleek, dynamic web interface to give you deep insights into both your local machine and remote peer systems. Inspired by classic sci-fi aesthetics and built with asynchronous Rust, Pylon Dashboard is designed for administrators, developers, and DevOps engineers who demand both performance and clarity.
 
 ---
 
@@ -12,7 +18,6 @@ Pylon Dashboard is a robust, cross-platform system monitoring and peer discovery
 - [Configuration](#configuration)
 - [Building & Running](#building--running)
 - [API Endpoints](#api-endpoints)
-- [Deployment](#deployment)
 - [Contributing](#contributing)
 - [Security Considerations](#security-considerations)
 - [Future Roadmap](#future-roadmap)
@@ -88,7 +93,7 @@ Pylon Dashboard is organized into several key modules:
 - [Rust](https://rustup.rs/) (Edition 2021 or later)
 - [Cargo](https://doc.rust-lang.org/cargo/)
 - A Linux, macOS, or Windows system for development (production deployments are typically on Linux)
-- *(Optional)* [GitHub CLI (`gh`)](https://cli.github.com/) for repository management and deployment
+- *(Optional)* [GitHub CLI (`gh`)](https://cli.github.com/) for repository management
 
 ### Clone the Repository
 
@@ -98,7 +103,6 @@ Clone the repository to your local machine:
 git clone https://github.com/saintpetejackboy/pylon.git
 cd pylon
 ```
-
 
 ---
 
@@ -329,10 +333,10 @@ Feel free to reach out to the maintainers if you have any questions or need guid
   Further improvements to the dashboard design and mobile responsiveness. Alternative skins.
 
 - **Extended Monitoring:**  
-  Integration of additional system metrics with configurable options
+  Integration of additional system metrics with configurable options.
 
 - **Advanced User Management:**  
-  Implement better authentication tactics
+  Implement better authentication tactics.
 
 - **Cross-Platform Optimization:**  
   There are no plans to make this work on Windows or Mac, sorry.
