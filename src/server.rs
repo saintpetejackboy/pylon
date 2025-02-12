@@ -15,7 +15,7 @@ use rust_embed::RustEmbed;
 use crate::remote::RemoteStatus;
 use crate::system_info::SystemData;
 
-pub const PYLON_VERSION: &str = "0.2.3";
+pub const PYLON_VERSION: &str = "0.3.1";
 
 
 /// The shared application state.
