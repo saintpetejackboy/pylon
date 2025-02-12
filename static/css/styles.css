@@ -1,0 +1,220 @@
+/* Global Styles */
+body {
+  background-color: #121212;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+h1, h2, h3 {
+  text-shadow: 0 0 5px rgba(0,255,255,0.5);
+}
+.adminSubmit { padding: 10px; border: 1px solid lightblue; background: black; color: lightblue; border-radius: 10px; box-shadow: 0px 0px 4px cyan; font-weight: bold; font-size: 1rem; }
+.adminSubmit:hover { opacity: 0.6; cursor: pointer; }
+.adminInput { padding: 10px; border: 1px solid lightblue; background: #232323; color: lightblue; border-radius: 10px; box-shadow: 0px 0px 4px cyan; font-weight: bold; font-size: 1rem; }
+
+.container {
+  width: 90%;
+  margin: 20px auto;
+  padding-right: 10px;
+}
+.card {
+  background-color: #1e1e1e;
+  padding: 20px;
+  margin: 10px 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+/* Hover effect for clickable pylon cards */
+.pylon-card:hover {
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(0,255,255,0.5);
+  transition: box-shadow 0.3s;
+}
+/* Gauges: always in one horizontal row */
+.gauges {
+  display: flex;
+  justify-content: space-around;
+  /* Never wrap – allow horizontal scrolling if needed */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.gauge-container {
+  text-align: center;
+  margin: 20px;
+  padding: 10px;
+  border-radius: 10px;
+}
+.gauge {
+  width: 180px;
+  height: 180px;
+  margin: auto;
+  filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.7));
+}
+.gauge-label {
+  margin-top: 8px;
+  font-size: 1.2rem;
+}
+/* Local Services Status */
+.services {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 20px;
+}
+.service {
+  text-align: center;
+}
+.service-light {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  margin: 0 auto;
+  box-shadow: 0 0 5px;
+}
+/* Network Chart */
+.network-chart-container {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+#networkChart {
+  width: 100% !important;
+  height: 100% !important;
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  display: block;
+}
+/* Table Styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+table, th, td {
+  border: 1px solid #333;
+}
+th, td {
+  padding: 8px;
+  text-align: left;
+}
+th {
+  background-color: #222;
+}
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+/* Flashing globe animation */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+/* Form Styles for Manage Remote Pylons */
+#pylonForm input, #pylonForm button {
+  padding: 8px;
+  margin: 5px;
+  border: none;
+  border-radius: 4px;
+}
+#pylonForm input {
+  width: calc(25% - 12px);
+}
+#pylonForm button {
+  background-color: #2196F3;
+  color: #fff;
+  cursor: pointer;
+}
+#pylonList {
+  list-style-type: none;
+  padding: 0;
+}
+#pylonList li {
+  padding: 5px;
+  border-bottom: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#pylonList button {
+  background-color: #f44336;
+  border: none;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+/* Modal styles */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.6);
+}
+.modal-content {
+  background-color: #1e1e1e;
+  margin: 15% auto;
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+  max-width: 500px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 1.2rem;
+}
+.close {
+  color: #aaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.close:hover,
+.close:focus {
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+/* Pylon header texts */
+.pylon-server-name {
+  font-size: 1.8rem;
+  color: #e0e0e0;
+}
+.pylon-location {
+  font-size: 1rem;
+  color: #9e9e9e;
+}
+.pylon-version {
+  font-size: 1rem;
+  color: #b0bec5;
+}
+/* Mobile-specific adjustments */
+@media (max-width: 600px) {
+  .container {
+	width: 95%;
+	margin: 10px auto;
+  }
+  .gauges {
+	flex-direction: row;
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	justify-content: flex-start;
+  }
+}

@@ -1,29 +1,83 @@
-# Pylon Dashboard 🚀
+# Pylon Dashboard 🚀✨
 
-Pylon Dashboard is a cross-platform system monitoring and peer discovery tool inspired by a classic StarCraft reference. It provides real-time metrics for your local system and remote peers, featuring a sleek web dashboard and an API interface. Whether you’re monitoring CPU usage or discovering new remote “pylons” on the network, Pylon Dashboard keeps you informed with style and precision.
+Pylon Dashboard is a robust, cross-platform system monitoring and peer discovery tool written in Rust. It combines real-time system metrics with a sleek, dynamic web interface to give you deep insights into both your local machine and remote peer systems. Inspired by classic sci-fi aesthetics and built with modern, asynchronous Rust, Pylon Dashboard is designed for administrators, developers, and DevOps engineers who demand both performance and clarity.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
+- [Architecture](#architecture)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Building & Running](#building--running)
-- [Deploying with GitHub CLI](#deploying-with-github-cli)
+- [API Endpoints](#api-endpoints)
+- [Deployment](#deployment)
 - [Contributing](#contributing)
+- [Security Considerations](#security-considerations)
+- [Future Roadmap](#future-roadmap)
 - [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
 ## Features ✨
 
-- **Real-time System Metrics:** Monitor CPU, RAM, disk usage, network throughput, and more.
-- **Remote Peer Discovery:** Automatically detect and poll remote Pylon instances.
-- **Sleek Dashboard:** A responsive, modern UI with animated gauges and charts.
-- **Graceful Shutdown:** Clean exit for all background tasks on user interruption.
-- **Customizable Configuration:** Easily tweak your settings with a TOML config file.
-- **Compiled as a Static Binary:** Build with MUSL for portability on Linux.
+- **Real-Time System Metrics:**  
+  Monitor CPU usage, RAM, disk I/O, network throughput, load average, and even view top memory-consuming processes in real time.
+
+- **Remote Peer Discovery & Monitoring:**  
+  Automatically detect and poll remote Pylon instances. The dashboard aggregates data from multiple systems so you can monitor your entire network from a single interface.
+
+- **Dynamic Web Dashboard:**  
+  A responsive HTML/JS/CSS interface featuring animated gauges, charts, and detailed panels for both local and remote systems.
+
+- **Admin Interface:**  
+  Secure admin endpoints for advanced system insights and remote pylon management (e.g., adding or removing remote configurations).
+
+- **Hot-Reload Configuration:**  
+  The application watches for changes to its TOML configuration file (`config.toml`) and reloads settings on the fly without needing a restart.
+
+- **Graceful Shutdown:**  
+  Utilizes asynchronous tasks and proper shutdown channels to ensure a clean exit, preserving data and system stability.
+
+- **Static Binary Compilation:**  
+  Option to build a fully static binary using MUSL, making deployment on Linux environments easier and more portable.
+
+---
+
+## Architecture
+
+Pylon Dashboard is organized into several key modules:
+
+### 1. Configuration Management (`config_manager.rs`)
+- **Responsibilities:**
+  - **Load/Save Config:** Reads settings from `config.toml` and writes changes back.
+  - **Hot-Reload:** Uses file watchers to detect changes and reload the configuration dynamically.
+- **Configuration Structure:**
+  - **Local Settings:** Includes the local port, admin token, name, description, and location.
+  - **Remote Pylons:** A list of remote instance configurations (each with IP, port, token, and optional name, location, and description).
+
+### 2. System Information (`system_info.rs`)
+- **Responsibilities:**
+  - **Local Metrics:** Polls for CPU usage, RAM usage, disk stats, network activity, uptime, and system load.
+  - **Static (Cached) Info:** Retrieves and caches system details like OS version, processor info, and versions of key software (e.g., Apache, PHP, MariaDB, Rust, Node.js).
+
+### 3. Remote Monitoring (`remote.rs`)
+- **Responsibilities:**
+  - **Polling Remote Pylons:** Regularly fetches metrics from configured and discovered remote pylons.
+  - **Peer Discovery:** Scans remote responses for additional peer configurations and integrates them into the polling list.
+
+### 4. Web Server & API (`server.rs`)
+- **Responsibilities:**
+  - **Serving the UI:** Delivers the main HTML dashboard along with static assets (JavaScript, CSS, icons).
+  - **RESTful Endpoints:** Provides APIs for system metrics, remote status, admin login, and remote pylon configuration management.
+  - **Session Management:** Implements secure sessions (with cookie storage) for admin authentication.
+
+### 5. Application Orchestration (`main.rs`)
+- **Responsibilities:**
+  - **Task Coordination:** Spawns background tasks for configuration watching, system metric polling, and remote pylon monitoring.
+  - **Graceful Shutdown:** Listens for termination signals (e.g., `ctrl+c`) and shuts down all tasks cleanly.
 
 ---
 
@@ -31,109 +85,257 @@ Pylon Dashboard is a cross-platform system monitoring and peer discovery tool in
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) (edition 2021)
+- [Rust](https://rustup.rs/) (Edition 2021 or later)
 - [Cargo](https://doc.rust-lang.org/cargo/)
-- Ubuntu (or any Linux distribution)
-- GitHub CLI (`gh`) – [Installation Instructions](https://cli.github.com/)
+- A Linux, macOS, or Windows system for development (production deployments are typically on Linux)
+- *(Optional)* [GitHub CLI (`gh`)](https://cli.github.com/) for repository management and deployment
 
 ### Clone the Repository
 
-If you haven’t already, clone the repository (once it’s live on GitHub):
+Clone the repository to your local machine:
 
 ```bash
 git clone https://github.com/saintpetejackboy/pylon.git
 cd pylon
 ```
 
+
 ---
 
 ## Configuration
 
-### Configuration File
+Pylon Dashboard uses a TOML configuration file to manage its settings. On the first run, the application checks for a `config.toml` file in the project directory. If not found, it generates one from the embedded default configuration (`config_default.toml`).
 
-- **config_default.toml**: Provides the default configuration.
-- **config.toml**: This is generated on first run if missing.  
-  **Note:** It is safe to leave your actual `config.toml` in the project directory as long as you add it to your `.gitignore`. This prevents sensitive data (such as tokens) from being pushed to GitHub.
+### Configuration Options
 
-Your `.gitignore` already includes:
+- **Local Settings:**
+  - `local_port` *(Optional)*: The default port for the web server (default is `6989`).
+  - `token`: A secret token used for admin access and remote API authentication.
+  - `name` *(Optional)*: The display name of this local Pylon instance.
+  - `description` *(Optional)*: A short description of the local Pylon.
+  - `location` *(Optional)*: The physical or logical location (e.g., "Data Center A").
 
+- **Remote Pylons:**
+  - `remote_pylons`: An array of remote configuration objects. Each remote pylon can have:
+    - `ip`: IP address of the remote Pylon.
+    - `port`: Port number where the remote Pylon is accessible.
+    - `token`: Authentication token for connecting to the remote pylon.
+    - `name` *(Optional)*: A friendly name.
+    - `location` *(Optional)*: Location information (e.g., "Branch Office").
+    - `description` *(Optional)*: A description of the remote pylon.
+
+### Example `config.toml`
+
+```toml
+local_port = 6989
+token = "your_secret_token"
+name = "Local Pylon"
+description = "Monitoring system for the primary server."
+location = "Data Center A"
+
+[[remote_pylons]]
+ip = "192.168.1.10"
+port = 6989
+token = "remote_token_1"
+name = "Remote Pylon 1"
+location = "Branch Office"
+description = "Backup server monitoring."
 ```
-/target
-config.toml
-```
 
-This means your local configuration will **not** be committed.
+> **Security Note:** Ensure that `config.toml` is added to your `.gitignore` so sensitive information is not accidentally committed.
 
 ---
 
 ## Building & Running
 
-### Build a Static Binary
+Pylon Dashboard is built with Rust and leverages asynchronous programming via Tokio. Follow these steps to compile and run the application.
 
-To compile a release binary for Linux using MUSL, run:
+### Building a Static Binary with MUSL
+
+For a portable, static Linux binary:
 
 ```bash
 cargo build --release --target x86_64-unknown-linux-musl
 ```
 
-The binary will be located at:  
-`target/x86_64-unknown-linux-musl/release/pylon`
+The compiled binary will be located at:
 
-### Run the Application
+```
+target/x86_64-unknown-linux-musl/release/pylon
+```
 
-After building, you can run the application:
+### Running the Application
+
+Simply execute the compiled binary:
 
 ```bash
 ./target/x86_64-unknown-linux-musl/release/pylon
 ```
 
-The server will automatically select an available port (default is `6989`), and you can view the dashboard by navigating to `http://127.0.0.1:<port>` in your web browser.
+On startup, the application will:
+- Ensure a `config.toml` exists (or create one from the default).
+- Start background tasks for system metrics polling, remote monitoring, and configuration file watching.
+- Launch the web server on the default (or next available) port—by default starting at `6989`.
+
+Open your browser and navigate to:
+
+```
+http://127.0.0.1:<port>
+```
+
+Replace `<port>` with the actual port number printed in the console.
 
 ---
 
-## Deploying with GitHub CLI
+## API Endpoints
 
-Assuming your local project is in `/home/jack/pylon`, here’s how to create a new public repository called **pylon** on GitHub using your CLI, then push your code.
+Pylon Dashboard exposes several RESTful endpoints for both public and admin use:
 
-1. **Navigate to your project directory:**
+### Public Endpoints
 
-   ```bash
-   cd /home/jack/pylon
-   ```
+- **GET /**  
+  Serves the main web dashboard interface. Simply open this URL in your browser.
 
-2. **Create the repository using `gh`:**
+- **GET /api/metrics**  
+  Returns local system metrics (CPU, RAM, disk usage, network stats, etc.) along with cached system information.
+  
+  **Example Response:**
+  ```json
+  {
+    "name": "Local Pylon",
+    "description": "Monitoring system for the primary server.",
+    "location": "Data Center A",
+    "version": "0.2.1",
+    "cached": { /* Cached system info */ },
+    "polled": { /* Polled metrics */ },
+    "remote_pylons": [ /* List of remote pylons from config */ ]
+  }
+  ```
 
-   ```bash
-   gh repo create saintpetejackboy/pylon --public --source=. --remote=origin --push
-   ```
+- **GET /api/remotes**  
+  Returns the current status of all remote pylons being monitored.
 
-   This command will:
-   - Create a new public repository on GitHub under your username.
-   - Set your local repository’s remote to `origin`.
-   - Push your current code to the remote repository.
+  **Example Response:**
+  ```json
+  [
+    {
+      "ip": "192.168.1.10",
+      "port": 6989,
+      "last_seen": "2025-02-11T12:34:56Z",
+      "data": { /* Remote metrics */ },
+      "online": true,
+      "name": "Remote Pylon 1",
+      "location": "Branch Office",
+      "description": "Backup server monitoring."
+    }
+  ]
+  ```
 
-3. **If you need to initialize Git manually (if not already initialized):**
+### Admin Endpoints
 
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit of Pylon Dashboard"
-   gh repo create saintpetejackboy/pylon --public --source=. --remote=origin --push
-   ```
+These endpoints require admin authentication using the token specified in your configuration.
 
-4. **Verify that everything is working:**
+- **POST /api/login**  
+  Authenticates the admin user. On success, a session is created.
 
-   Open your browser to `https://github.com/saintpetejackboy/pylon` to see your repository.
+  **Payload:**
+  ```json
+  { "token": "your_secret_token" }
+  ```
+  
+  **Success Response:**
+  ```json
+  { "status": "logged in" }
+  ```
+
+- **GET /api/admin-content**  
+  Returns HTML content for the admin panel, which includes system details and remote management tools.  
+  *(Accessible only after successful authentication.)*
+
+- **GET /api/config/pylons**  
+  Retrieves the list of remote pylons currently defined in the configuration.
+
+- **POST /api/config/pylons/add**  
+  Adds a new remote pylon to the configuration.
+
+  **Payload:**
+  ```json
+  {
+    "ip": "192.168.1.11",
+    "port": 6989,
+    "token": "remote_token_2",
+    "name": "Remote Pylon 2",
+    "location": "Remote Office",
+    "description": "Secondary monitoring node."
+  }
+  ```
+
+  **Success Response:**
+  ```json
+  { "status": "added" }
+  ```
+
+- **POST /api/config/pylons/remove**  
+  Removes a remote pylon configuration.
+
+  **Payload:**
+  ```json
+  { "ip": "192.168.1.11", "port": 6989 }
+  ```
+
+  **Success Response:**
+  ```json
+  { "status": "removed" }
+  ```
 
 ---
 
 ## Contributing 🤝
 
-Contributions are welcome! Feel free to open issues or submit pull requests. When contributing, please follow these guidelines:
+Contributions to Pylon Dashboard are welcome! Whether you're fixing bugs, adding features, or improving documentation, please adhere to the following guidelines:
 
-- Ensure your code is well-commented.
-- Follow Rust’s idiomatic practices.
-- Test your changes before submitting.
+- **Code Style:**  
+  Write clean, idiomatic Rust. Follow community best practices and comment your code as needed.
+
+- **Testing:**  
+  Ensure that your changes are tested. Add tests for new features or bug fixes when possible.
+
+- **Pull Requests:**  
+  Before submitting a PR, open an issue to discuss the change. Include a clear description of your changes and why they are necessary.
+
+- **Documentation:**  
+  Update documentation and in-code comments to reflect your changes.
+
+Feel free to reach out to the maintainers if you have any questions or need guidance.
+
+---
+
+## Security Considerations
+
+- **Configuration Files:**  
+  Your `config.toml` may contain sensitive data (e.g., admin tokens). Make sure it is included in your `.gitignore` to prevent accidental commits.
+
+- **Admin Token:**  
+  Use a strong, unique token for admin authentication. Do not share this token publicly.
+
+- **Session Security:**  
+  In production, update the default session key in `server.rs` with a secure, randomly generated key. Consider deploying over HTTPS to protect your session data.
+
+---
+
+## Future Roadmap
+
+- **Enhanced UI/UX:**  
+  Further improvements to the dashboard design and mobile responsiveness. Alternative skins.
+
+- **Extended Monitoring:**  
+  Integration of additional system metrics with configurable options
+
+- **Advanced User Management:**  
+  Implement better authentication tactics
+
+- **Cross-Platform Optimization:**  
+  There are no plans to make this work on Windows or Mac, sorry.
 
 ---
 
@@ -143,6 +345,12 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Happy monitoring and may your pylons always be online! 🌟
-```
+## Acknowledgments
 
+- Built using the powerful Rust ecosystem (including [Tokio](https://tokio.rs/), [Actix Web](https://actix.rs/), and [sysinfo](https://crates.io/crates/sysinfo)).
+- Inspired by classic system monitoring tools and modern dashboard interfaces.
+- Thanks to the open-source community for ongoing support and contributions.
+
+---
+
+Happy monitoring—and may your pylons always be online! 🌟
