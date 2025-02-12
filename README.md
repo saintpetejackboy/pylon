@@ -1,7 +1,6 @@
 # Pylon Dashboard 🚀✨
 
 <!-- Build and License -->
-[![Build Status](https://github.com/saintpetejackboy/pylon/actions/workflows/ci.yml/badge.svg)](https://github.com/saintpetejackboy/pylon/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <!-- Repo Metrics -->
@@ -10,9 +9,9 @@
 [![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
 
 <!-- Language Breakdown (example percentages; update as needed) -->
-[![Rust](https://img.shields.io/badge/Rust-70%25-orange)](#)
+[![Rust](https://img.shields.io/badge/Rust-35%25-orange)](#)
 [![HTML](https://img.shields.io/badge/HTML-15%25-blue)](#)
-[![CSS](https://img.shields.io/badge/CSS-15%25-blue)](#)
+[![CSS](https://img.shields.io/badge/CSS-4.7%67-blue)](#)
 
 <!-- Additional Cool Badges -->
 [![GitHub last commit](https://img.shields.io/github/last-commit/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/commits)
