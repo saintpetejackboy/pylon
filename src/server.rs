@@ -1,23 +1,23 @@
 // src/server.rs
 
-use actix_files::Files;
+use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder, middleware::Logger};
 use actix_session::{Session, SessionMiddleware};
 use actix_session::storage::CookieSessionStore;
 use actix_web::cookie::Key;
-
-use actix_web::{
-    get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder, middleware::Logger,
-};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
+use mime_guess::from_path;
+use rust_embed::RustEmbed;
 
+// These modules are assumed to be defined elsewhere in your project.
 use crate::remote::RemoteStatus;
 use crate::system_info::SystemData;
 
-const PYLON_VERSION: &str = "0.2.1";
+const PYLON_VERSION: &str = "0.2.3";
 
+/// The shared application state.
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<RwLock<crate::config_manager::Config>>,
@@ -25,11 +25,34 @@ pub struct AppState {
     pub remote_statuses: Arc<Mutex<HashMap<String, RemoteStatus>>>,
 }
 
+/// Embed the contents of the `static/` folder into the binary.
+#[derive(RustEmbed)]
+#[folder = "static/"] // Ensure this path is relative to your Cargo.toml location.
+struct Asset;
+
+/// Handler to serve embedded static files.
 ///
+/// This route matches URLs of the form `/static/{filename:.*}`.
+async fn serve_embedded_file(req: HttpRequest) -> impl Responder {
+    // Extract the requested file path from the URL.
+    let filename: String = req.match_info().query("filename").parse().unwrap_or_default();
+
+    // Look up the file in the embedded assets.
+    match Asset::get(&filename) {
+        Some(content) => {
+            // Guess the MIME type based on the file extension.
+            let mime_type = from_path(&filename).first_or_octet_stream();
+            HttpResponse::Ok()
+                .content_type(mime_type.as_ref())
+                .body(content.data)
+        },
+        None => HttpResponse::NotFound().body("Not Found"),
+    }
+}
+
 /// GET /
 ///
-/// Serves the main HTML. Notice that we no longer expose the secret token.
-///
+/// Serves the main HTML page.
 #[get("/")]
 async fn index() -> impl Responder {
     let html = r#"<!DOCTYPE html>
@@ -42,29 +65,21 @@ async fn index() -> impl Responder {
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <!-- Web Manifest -->
   <link rel="manifest" href="/static/site.webmanifest">
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/static/android-chrome-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="/static/android-chrome-512x512.png">
-    <link rel="shortcut icon" href="/static/favicon.ico">
-    <!-- Apple Touch Icon (for iOS devices) -->
-    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-    <!-- Theme Colors (for mobile browsers) -->
-	
-    <meta name="theme-color" content="black" /> 
-    <meta name="msapplication-TileColor" content="black" />
-  <script src="static/js/progressbar.min.js"></script>
-  <script src="static/js/chart.js"></script>
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/android-chrome-192x192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/android-chrome-512x512.png">
+  <link rel="shortcut icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="theme-color" content="black" /> 
+  <meta name="msapplication-TileColor" content="black" />
+  <script src="/static/js/progressbar.min.js"></script>
+  <script src="/static/js/chart.js"></script>
 </head>
 <body>
   <div class="container">
-    <!-- The pylon header (name, location, version) -->
     <h1 id="localPylonName">Pylon Dashboard</h1>
-    
-    <!-- Local Pylon Card -->
     <div class="card" id="localMetricsCard">
-      <!-- Gauges for the local pylon -->
       <div class="gauges">
         <div class="gauge-container">
           <div id="cpuGauge" class="gauge"></div>
@@ -81,42 +96,25 @@ async fn index() -> impl Responder {
           <div id="diskUsageText" style="margin-top: 8px; font-size: 1rem;"></div>
         </div>
       </div>
-      <!-- Local Services Status Lights -->
-      <div class="services" id="servicesStatus">
-        <!-- Filled dynamically -->
-      </div>
+      <div class="services" id="servicesStatus"></div>
     </div>
-    
-    <!-- Remote Pylons Header -->
     <h2>Remote Pylons 🌐</h2>
-    <!-- Remote Pylons Container -->
-    <div id="remoteContainer">
-      <!-- Remote pylon cards appended dynamically -->
-    </div>
-  
-    <!-- Network Throughput Card -->
+    <div id="remoteContainer"></div>
     <div class="card" id="networkCard">
       <h2>Network Throughput 🌐</h2>
       <div class="network-chart-container">
         <canvas id="networkChart"></canvas>
       </div>
     </div>
-	
-    <!-- Admin Login Card -->
     <div class="card" id="adminLoginCard">
       <h2>Admin Access</h2>
       <input type="password" id="adminKeyInput" class="adminInput" placeholder="Enter Admin Key">
       <button id="adminKeySubmit" class="adminSubmit">Unlock Admin Features</button>
       <p id="adminError" style="color: red; display: none;">Incorrect key.</p>
     </div>
-    
-    <!-- Placeholder for Admin Content -->
     <div id="adminContent"></div>
   </div>
-  
   <script type="module" src="/static/js/main.js"></script>
-  
-  <!-- Modal for Pylon Description -->
   <div id="pylonModal" class="modal">
     <div class="modal-content">
       <span class="close">&times;</span>
@@ -130,12 +128,9 @@ async fn index() -> impl Responder {
     HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
 }
 
-///
 /// POST /api/login
 ///
-/// Accepts a JSON payload containing the admin token. If it matches the server–side token,
-/// the session is marked as authenticated.
-///
+/// Accepts a JSON payload with the admin token and, if valid, marks the session as authenticated.
 #[derive(Deserialize)]
 struct LoginRequest {
     token: String,
@@ -156,29 +151,22 @@ async fn login(
     }
 }
 
-///
 /// GET /api/admin-content
 ///
-/// Returns admin–only HTML if the session has been authenticated.
-///
+/// Returns admin-only HTML if the session is authenticated.
 #[get("/api/admin-content")]
 async fn admin_content(session: Session) -> impl Responder {
     if let Ok(Some(true)) = session.get::<bool>("admin_authenticated") {
         let admin_html = r#"
-      <!-- System Information Card -->
       <div class="card" id="systemInfoCard">
         <h2>System Information 📋</h2>
         <div id="systemDetails"></div>
       </div>
-      
-      <!-- Other Metrics Card -->
       <div class="card" id="otherMetricsCard">
         <h2>Other Metrics ⏱️</h2>
         <div>Uptime: <span id="uptime">0</span> seconds</div>
         <div>Load Average: <span id="loadAverage">0</span></div>
       </div>
-      
-      <!-- Top Processes Card -->
       <div class="card" id="topProcessesCard">
         <h2>Top 5 Processes by Memory</h2>
         <table id="topProcessesTable">
@@ -188,8 +176,6 @@ async fn admin_content(session: Session) -> impl Responder {
           <tbody></tbody>
         </table>
       </div>
-      
-      <!-- Manage Remote Pylons Card -->
       <div class="card" id="managePylonsCard">
         <h2>Manage Remote Pylons</h2>
         <form id="pylonForm">
@@ -209,9 +195,9 @@ async fn admin_content(session: Session) -> impl Responder {
     }
 }
 
-///
 /// GET /api/metrics
 ///
+/// Returns local metrics as JSON.
 #[get("/api/metrics")]
 async fn metrics(data: web::Data<AppState>, _req: HttpRequest) -> impl Responder {
     let sys_data = data.system_data.lock().unwrap();
@@ -231,9 +217,9 @@ async fn metrics(data: web::Data<AppState>, _req: HttpRequest) -> impl Responder
     HttpResponse::Ok().json(response)
 }
 
-///
 /// GET /api/remotes
 ///
+/// Returns remote pylon statuses as JSON.
 #[get("/api/remotes")]
 async fn remotes(data: web::Data<AppState>) -> impl Responder {
     let statuses = data.remote_statuses.lock().unwrap();
@@ -241,9 +227,9 @@ async fn remotes(data: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(response)
 }
 
-///
 /// GET /api/config/pylons
 ///
+/// Returns the current remote pylons configuration.
 #[get("/api/config/pylons")]
 async fn get_pylons(data: web::Data<AppState>) -> impl Responder {
     let config = data.config.read().unwrap();
@@ -256,9 +242,9 @@ struct RemovePylonRequest {
     port: u16,
 }
 
-///
 /// POST /api/config/pylons/add
 ///
+/// Adds a new remote pylon to the configuration.
 #[post("/api/config/pylons/add")]
 async fn add_pylon(
     data: web::Data<AppState>,
@@ -277,9 +263,9 @@ async fn add_pylon(
     }
 }
 
-///
 /// POST /api/config/pylons/remove
 ///
+/// Removes a remote pylon from the configuration.
 #[post("/api/config/pylons/remove")]
 async fn remove_pylon(
     data: web::Data<AppState>,
@@ -295,9 +281,7 @@ async fn remove_pylon(
     }
 }
 
-///
-/// Helper: Check if a port is available
-///
+/// Checks if a port is available.
 async fn port_available(port: u16) -> bool {
     use tokio::net::TcpListener;
     match TcpListener::bind(("127.0.0.1", port)).await {
@@ -306,9 +290,7 @@ async fn port_available(port: u16) -> bool {
     }
 }
 
-///
-/// Finds an open port starting with the given port.
-///
+/// Finds an open port starting from `start_port`.
 pub async fn find_open_port(start_port: u16) -> u16 {
     let mut port = start_port;
     loop {
@@ -320,9 +302,7 @@ pub async fn find_open_port(start_port: u16) -> u16 {
     port
 }
 
-///
 /// Runs the web server.
-///
 pub async fn run_server(port: u16, state: AppState) -> std::io::Result<()> {
     println!("Starting server on http://127.0.0.1:{}", port);
 
@@ -330,13 +310,12 @@ pub async fn run_server(port: u16, state: AppState) -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(state.clone()))
             .wrap(Logger::default())
-            // Session middleware: In production replace `[0; 32]` with a secure key and use HTTPS.
-			.wrap(SessionMiddleware::new(
-				CookieSessionStore::default(),
-				// The Key should be 64 bytes. For development, you can use a simple key.
-				Key::from(&[0; 64])
-			))
-            .service(Files::new("/static", "./static").show_files_listing())
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                Key::from(&[0; 64]) // In production, use a secure key!
+            ))
+            // Route to serve embedded static files.
+            .route("/static/{filename:.*}", web::get().to(serve_embedded_file))
             .service(index)
             .service(login)
             .service(metrics)

@@ -1,11 +1,14 @@
 [package]
 name = "pylon"
-version = "0.2.1"
+version = "0.2.3"
 edition = "2021"
 
 [dependencies]
 actix-web = "4"
 actix-files = "0.6"
+rust-embed = "6.4.0"
+mime_guess = "2.0"
+
 actix-session = { version = "0.7", features = ["cookie-session"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

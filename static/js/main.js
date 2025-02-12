@@ -1,10 +1,10 @@
 // /static/js/main.js
 
 import { showModal, hideModal } from './modal.js';
-import { loginAdmin, loadAdminContent } from './admin.js';
+import { loginAdmin, loadAdminContent, initAdminContent } from './admin.js';
 import { initGauges, updateNetworkChart, fetchLocalMetrics, fetchRemoteMetrics } from './dashboard.js';
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   // ----- Modal Close Events -----
   const closeBtn = document.querySelector(".close");
   if (closeBtn) {
@@ -17,6 +17,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  try {
+    // Attempt to fetch admin content. This request will include the session cookie.
+    const response = await fetch('/api/admin-content');
+    if (response.ok) {
+      // If the user is authenticated, hide the login form and load admin content.
+      document.getElementById('adminLoginCard').style.display = 'none';
+      const html = await response.text();
+      document.getElementById('adminContent').innerHTML = html;
+      // Optionally, initialize admin-specific functionality.
+      initAdminContent();
+    } else {
+      // If not authenticated, make sure the login panel is visible.
+      document.getElementById('adminLoginCard').style.display = 'block';
+    }
+  } catch (err) {
+    console.error('Error fetching admin content on page load:', err);
+    // Fallback: show the login form if there’s an error.
+    document.getElementById('adminLoginCard').style.display = 'block';
+  }
+  
   // ----- Local Metrics Card Click (Modal Trigger) -----
   const localCard = document.getElementById("localMetricsCard");
   if (localCard) {
