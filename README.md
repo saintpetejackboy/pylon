@@ -3,7 +3,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
 [![Issues](https://img.shields.io/github/issues/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/issues)
-[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
 [![Rust](https://img.shields.io/badge/Rust-49%25-orange)](#)
 [![HTML](https://img.shields.io/badge/HTML-15%25-blue)](#)
 [![CSS](https://img.shields.io/badge/CSS-4.7%25-blue)](#)
