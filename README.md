@@ -14,6 +14,12 @@
 
 ---
 
+- **Pylon:**  
+  ![Mobile View](./images/gauges.webp)
+
+
+---
+
 ## Table of Contents
 
 - [Features](#features)
@@ -367,16 +373,18 @@ sudo systemctl reload nginx
 
 Below are some placeholder images to showcase the dashboard’s output. Replace the paths with your compressed image files (e.g., WebP format):
 
-- **Dashboard Overview:**  
-  ![Dashboard Overview](./images/dashboard-overview.webp)
-
 - **Admin Panel:**  
-  ![Admin Panel](./images/admin-panel.webp)
+  ![Dashboard Overview](./images/admin.webp)
 
-- **Mobile View:**  
-  ![Mobile View](./images/mobile-view.webp)
+- **Network:**  
+  ![Admin Panel](./images/network.webp)
 
-These images serve as examples of the output. Update them with your final assets as needed.
+- **System Info:**  
+  ![Mobile View](./images/sysinfo.webp)
+  
+- **Processes:**  
+  ![Mobile View](./images/processes.webp)
+
 
 ---
 
