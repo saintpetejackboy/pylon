@@ -18,7 +18,6 @@
 - **Pylon:**  
   ![Mobile View](./images/gauges.webp)
 
-
 ---
 
 ## Table of Contents
@@ -38,6 +37,7 @@
 - [Logging and Debugging](#logging-and-debugging)
 - [Development & Testing](#development--testing)
 - [Advanced Deployment](#advanced-deployment)
+- [Systemd Service & Auto-Update Setup](#systemd-service--auto-update-setup)
 - [Contributing](#contributing)
 - [Security Considerations](#security-considerations)
 - [Future Roadmap](#future-roadmap)
@@ -386,7 +386,6 @@ Below are some placeholder images to showcase the dashboard’s output. Replace 
 - **Processes:**  
   ![Mobile View](./images/processes.webp)
 
-
 ---
 
 ## Production Considerations
@@ -405,7 +404,8 @@ Below are some placeholder images to showcase the dashboard’s output. Replace 
 ## Logging and Debugging
 
 - **Logging Middleware:**  
-  Pylon Dashboard uses Actix Web’s built-in logging (`Logger::default()`).  
+  Pylon Dashboard uses Actix Web’s built-in logging (`Logger::default()`).
+
 - **Verbose Logging:**  
   Set the environment variable for detailed logs:
   ```bash
@@ -449,9 +449,30 @@ Below are some placeholder images to showcase the dashboard’s output. Replace 
 
 ## Advanced Deployment
 
-### Systemd Service Example
+### Systemd Service & Auto-Update Setup
 
-To run Pylon Dashboard as a systemd service on Linux, create a unit file (e.g., `/etc/systemd/system/pylon.service`):
+Pylon Dashboard supports automatic in-place updates for seamless version upgrades. **By default, auto-updates are disabled** for security reasons. Follow the instructions below to configure a secure deployment and enable auto-updates if desired.
+
+#### 1. Secure Binary Installation
+
+For a secure installation, we recommend placing the binary in a dedicated directory (e.g., `/opt/pylon`):
+
+```bash
+sudo mkdir -p /opt/pylon
+sudo chown -R www-data:www-data /opt/pylon
+sudo chmod -R 755 /opt/pylon
+```
+
+Deploy your built binary into this directory:
+
+```bash
+cp target/x86_64-unknown-linux-musl/release/pylon /opt/pylon/
+sudo chmod +x /opt/pylon/pylon
+```
+
+#### 2. Create a Systemd Service
+
+Create a file at `/etc/systemd/system/pylon.service` with the following content:
 
 ```ini
 [Unit]
@@ -459,24 +480,63 @@ Description=Pylon Dashboard Service
 After=network.target
 
 [Service]
-ExecStart=/path/to/pylon
-Restart=on-failure
-User=your_username
+ExecStart=/opt/pylon/pylon
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pylon
 Environment=RUST_LOG=actix_web=info
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start the service:
+Reload systemd, enable, and start the service:
+
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable pylon
 sudo systemctl start pylon
 ```
 
-### Docker/Containerization
+Verify the status:
 
-Containerization is under consideration. An official Dockerfile or container image may be provided in the future. Contributions in this area are welcome!
+```bash
+sudo systemctl status pylon
+```
+
+#### 3. Enabling Auto-Updates
+
+The auto-update mechanism downloads a new binary, backs up the current one (as `pylon.old`), replaces it, and restarts the service. Because restarting a service requires elevated privileges, you need to grant the service user (e.g., `www-data`) passwordless sudo access for this operation.
+
+1. **Create a Sudoers Rule:**
+
+   Create a file `/etc/sudoers.d/pylon` with the following content:
+
+   ```sudoers
+   www-data ALL=(root) NOPASSWD: /bin/systemctl restart pylon
+   ```
+
+2. **Update Your Configuration:**
+
+   In your `config.toml`, enable auto-updates by setting:
+
+   ```toml
+   auto_update = true
+   master_update_url = "https://your-update-server.com/pylon"
+   ```
+
+   *Note:* Auto-updates are optional. To disable, simply set `auto_update = false`.
+
+3. **Monitoring the Update Process:**
+
+   The updater logs every step of the update process. To monitor updates, use:
+
+   ```bash
+   sudo journalctl -u pylon.service -f
+   ```
+
+   If an update fails, the updater disables further auto-updates and leaves a backup binary (`pylon.old`) in `/opt/pylon` for easy rollback.
 
 ---
 
@@ -489,11 +549,13 @@ Whether you're fixing bugs, adding features, or improving documentation, your he
 ## Security Considerations
 
 - **Configuration Files:**  
-  The `config.toml` file contains sensitive data. Make sure it is excluded from version control.
+  The `config.toml` file contains sensitive data (tokens, secrets). Ensure it is excluded from version control and secured.
 - **Admin Token:**  
   Use a strong, unique token for admin authentication.
 - **Session Management:**  
   Update the default session key for production use and consider HTTPS to protect session cookies.
+- **Auto-Update Privileges:**  
+  The auto-update mechanism requires the service user to restart the service via sudo. Ensure proper sudoers rules are in place to avoid unauthorized access.
 
 ---
 

@@ -35,6 +35,10 @@ pub struct Config {
     pub description: Option<String>,
     // New: local location (optional)
     pub location: Option<String>,
+
+    // NEW: auto-update configuration options
+    pub auto_update: Option<bool>,
+    pub master_update_url: Option<String>,
 }
 
 impl Default for Config {
@@ -46,10 +50,11 @@ impl Default for Config {
             remote_pylons: None,
             description: None,
             location: None,
+            auto_update: Some(false), // disabled by default
+            master_update_url: Some("https://brinstar.top/pylon".into()),
         }
     }
 }
-
 
 pub fn load_config() -> Result<Config, config::ConfigError> {
     let settings = config::Config::builder()

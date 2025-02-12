@@ -15,7 +15,8 @@ use rust_embed::RustEmbed;
 use crate::remote::RemoteStatus;
 use crate::system_info::SystemData;
 
-const PYLON_VERSION: &str = "0.2.3";
+pub const PYLON_VERSION: &str = "0.2.3";
+
 
 /// The shared application state.
 #[derive(Clone)]
@@ -47,6 +48,26 @@ async fn serve_embedded_file(req: HttpRequest) -> impl Responder {
                 .body(content.data)
         },
         None => HttpResponse::NotFound().body("Not Found"),
+    }
+}
+
+// This endpoint triggers an update check when called.
+#[get("/api/check_update")]
+async fn check_update_endpoint(data: web::Data<AppState>) -> impl Responder {
+    // Call the updater's check_for_update function.
+    match crate::updater::check_for_update(Arc::clone(&data.config)).await {
+        Ok(updated) => {
+            if updated {
+                HttpResponse::Ok().json(json!({"status": "updated"}))
+            } else {
+                HttpResponse::Ok().json(json!({"status": "up-to-date"}))
+            }
+        }
+        Err(e) => {
+            // Fail silently by logging the error and returning an OK response.
+            println!("Error during update check: {}", e);
+            HttpResponse::Ok().json(json!({"status": "error", "message": e.to_string()}))
+        }
     }
 }
 
@@ -324,6 +345,7 @@ pub async fn run_server(port: u16, state: AppState) -> std::io::Result<()> {
             .service(add_pylon)
             .service(remove_pylon)
             .service(admin_content)
+			.service(check_update_endpoint)
     })
     .bind(("0.0.0.0", port))?
     .run()

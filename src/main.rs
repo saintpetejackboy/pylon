@@ -4,6 +4,7 @@ mod config_manager;
 mod system_info;
 mod remote;
 mod server;
+mod updater; // <-- New updater module
 
 use std::fs;
 use std::path::Path;
@@ -19,7 +20,6 @@ fn ensure_config_exists() -> std::io::Result<()> {
     let config_path = "config.toml";
     if !Path::new(config_path).exists() {
         // The default configuration is embedded at compile time.
-        // Make sure the path below is relative to your src folder or project root as needed.
         const DEFAULT_CONFIG: &str = include_str!("../config_default.toml");
         fs::write(config_path, DEFAULT_CONFIG)?;
         println!("Default configuration written to '{}'.", config_path);
@@ -32,7 +32,6 @@ async fn main() -> std::io::Result<()> {
     // On startup, ensure that a config file exists.
     if let Err(e) = ensure_config_exists() {
         eprintln!("Failed to ensure config file exists: {}", e);
-        // Depending on your needs, you might choose to exit here.
     }
 
     // Load the configuration (or use defaults if it fails).
@@ -63,7 +62,11 @@ async fn main() -> std::io::Result<()> {
     let remote_statuses_clone = Arc::clone(&remote_statuses);
     tokio::spawn(remote::poll_remote_pylons(config_clone2, remote_statuses_clone, shutdown_rx.clone()));
 
-    // Determine which port to use (starting with the configured default, 6989).
+    // ---- Spawn the auto-update task ----
+    let config_clone3 = Arc::clone(&config);
+    tokio::spawn(updater::auto_update_loop(config_clone3, shutdown_rx.clone()));
+
+    // Determine which port to use.
     let base_port = config.read().unwrap().local_port.unwrap_or(6989);
     let server_port = server::find_open_port(base_port).await;
     if server_port != base_port {
@@ -86,7 +89,6 @@ async fn main() -> std::io::Result<()> {
         },
         _ = tokio::signal::ctrl_c() => {
             println!("Received ctrl+c, shutting down gracefully...");
-            // Signal shutdown to all background tasks.
             let _ = shutdown_tx.send(true);
             Ok(())
         }
