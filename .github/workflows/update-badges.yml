@@ -1,0 +1,41 @@
+name: Update Language Badges
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-badges:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Get Language Data
+        run: |
+          curl -s https://api.github.com/repos/saintpetejackboy/pylon/languages > languages.json
+
+      - name: Ensure Rust, CSS, JavaScript, and HTML Always Exist
+        run: |
+          echo '{"Rust":0,"CSS":0,"JavaScript":0,"HTML":0}' > default.json
+          jq -s 'add' default.json languages.json > merged.json
+          mv merged.json languages.json
+
+      - name: Calculate Percentages
+        run: |
+          TOTAL=$(jq 'map_values(.) | add' languages.json)
+          jq 'to_entries | map({key: .key, value: ((.value / $TOTAL) * 100)})' --argjson TOTAL "$TOTAL" languages.json > lang_percent.json
+
+      - name: Update Badges
+        run: |
+          jq -r '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-blue)](#)"' lang_percent.json > README_BADGES.md
+          echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" | cat - README_BADGES.md > README.md
+
+      - name: Commit & Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions@github.com"
+          git add README.md
+          git commit -m "Auto-update language badges" || echo "No changes to commit"
+          git push
