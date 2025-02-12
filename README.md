@@ -482,7 +482,7 @@ Containerization is under consideration. An official Dockerfile or container ima
 
 ## Contributing 🤝
 
-Contributions are welcome! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated. Please feel free to fork the repository and submit pull requests.
+Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated. Please feel free to fork the repository and submit pull requests.
 
 ---
 
