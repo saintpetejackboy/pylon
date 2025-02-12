@@ -11,7 +11,7 @@
 <!-- Language Breakdown (example percentages; update as needed) -->
 [![Rust](https://img.shields.io/badge/Rust-35%25-orange)](#)
 [![HTML](https://img.shields.io/badge/HTML-15%25-blue)](#)
-[![CSS](https://img.shields.io/badge/CSS-4.7%67-blue)](#)
+[![CSS](https://img.shields.io/badge/CSS-4.7%25-blue)](#)
 
 <!-- Additional Cool Badges -->
 [![GitHub last commit](https://img.shields.io/github/last-commit/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/commits)
