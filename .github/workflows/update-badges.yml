@@ -24,18 +24,33 @@ jobs:
 
       - name: Calculate Percentages
         run: |
-          TOTAL=$(jq 'map_values(.) | add' languages.json)
+          TOTAL=$(jq 'reduce .[] as $num (0; . + $num)' languages.json)
           jq 'to_entries | map({key: .key, value: ((.value / $TOTAL) * 100)})' --argjson TOTAL "$TOTAL" languages.json > lang_percent.json
 
-      - name: Update Badges
+      - name: Generate Language Badges
         run: |
-          jq -r '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-blue)](#)"' lang_percent.json > README_BADGES.md
-          echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" | cat - README_BADGES.md > README.md
+          declare -A COLORS
+          COLORS=( ["Rust"]="orange" ["JavaScript"]="yellow" ["HTML"]="blue" ["CSS"]="blue" )
 
-      - name: Commit & Push
+          echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" > README_BADGES.md
+          jq -r '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-" + (env.COLORS[\(.key)] // "blue") + ")](#)"' lang_percent.json >> README_BADGES.md
+
+      - name: Update README.md
+        run: |
+          awk '/<!-- BADGES_START -->/,/<!-- BADGES_END -->/ {next} {print}' README.md > README_TMP.md
+          mv README_TMP.md README.md
+          echo "<!-- BADGES_START -->" >> README.md
+          cat README_BADGES.md >> README.md
+          echo "<!-- BADGES_END -->" >> README.md
+
+      - name: Commit & Push Changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
           git add README.md
-          git commit -m "Auto-update language badges" || echo "No changes to commit"
-          git push
+          if ! git diff --cached --exit-code; then
+            git commit -m "Auto-update language badges"
+            git push
+          else
+            echo "No changes to commit"
+          fi

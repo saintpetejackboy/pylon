@@ -3,10 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)
 [![Issues](https://img.shields.io/github/issues/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/issues)
-[![Rust](https://img.shields.io/badge/Rust-49%25-orange)](#)
-[![HTML](https://img.shields.io/badge/HTML-15%25-blue)](#)
-[![CSS](https://img.shields.io/badge/CSS-4.7%25-blue)](#)
-[![JavaScript](https://img.shields.io/badge/JavaScript-3%25-yellow)](#)
+
+<!-- BADGES_START -->
+(your dynamic badges will go here)
+<!-- BADGES_END -->
+
 
 [![GitHub last commit](https://img.shields.io/github/last-commit/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/commits)
 [![Contributors](https://img.shields.io/github/contributors/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/graphs/contributors)
