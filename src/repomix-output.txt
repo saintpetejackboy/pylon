@@ -1,0 +1,1257 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+config_manager.rs
+main.rs
+remote.rs
+server.rs
+system_info.rs
+updater.rs
+
+================================================================
+Files
+================================================================
+
+================
+File: config_manager.rs
+================
+// src/config_manager.rs
+
+use serde::{Serialize, Deserialize};
+use std::sync::{Arc, RwLock};
+use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent};
+use std::sync::mpsc::{channel, TryRecvError};
+use std::time::Duration;
+use tokio::time::sleep;
+use tokio::sync::watch;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemotePylonConfig {
+    pub ip: String,
+    pub port: u16,
+    pub token: String,
+    // New optional name for a remote pylon.
+    pub name: Option<String>,
+    // New: location string (e.g. "Tampa, FL")
+    pub location: Option<String>,
+    // New: description string
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Config {
+    // The default local port Pylon will try to use.
+    pub local_port: Option<u16>,
+    // The token that remote clients must supply when polling /api/metrics.
+    pub token: String,
+    // New: the name of this local Pylon.
+    pub name: Option<String>,
+    // A list of remote Pylon instances to poll.
+    pub remote_pylons: Option<Vec<RemotePylonConfig>>,
+    // New: local description (optional)
+    pub description: Option<String>,
+    // New: local location (optional)
+    pub location: Option<String>,
+
+    // NEW: auto-update configuration options
+    pub auto_update: Option<bool>,
+    pub master_update_url: Option<String>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            local_port: Some(6989),
+            token: "default_token".into(),
+            name: Some("Local Pylon".into()),
+            remote_pylons: None,
+            description: None,
+            location: None,
+            auto_update: Some(false), // disabled by default
+            master_update_url: Some("https://brinstar.top/pylon".into()),
+        }
+    }
+}
+
+pub fn load_config() -> Result<Config, config::ConfigError> {
+    let settings = config::Config::builder()
+        .add_source(config::File::with_name("config"))
+        .build()?;
+    settings.try_deserialize::<Config>()
+}
+
+/// Now accepts a shutdown receiver so it can exit gracefully.
+pub async fn watch_config(config_arc: Arc<RwLock<Config>>, shutdown: watch::Receiver<bool>) {
+    let (tx, rx) = channel();
+    let mut watcher = watcher(tx, Duration::from_secs(2)).unwrap();
+    if let Err(e) = watcher.watch("config.toml", RecursiveMode::NonRecursive) {
+        println!("Failed to watch config.toml: {}", e);
+        return;
+    }
+
+    loop {
+        if *shutdown.borrow() {
+            println!("Shutting down config watcher.");
+            break;
+        }
+
+        match rx.try_recv() {
+            Ok(event) => match event {
+                DebouncedEvent::Write(path) => {
+                    println!("Config file changed: {:?}", path);
+                    if let Ok(new_config) = load_config() {
+                        let mut config_lock = config_arc.write().unwrap();
+                        *config_lock = new_config;
+                        println!("Config reloaded.");
+                    } else {
+                        println!("Failed to reload config.");
+                    }
+                },
+                _ => {},
+            },
+            Err(TryRecvError::Empty) => {
+                sleep(Duration::from_secs(1)).await;
+            },
+            Err(TryRecvError::Disconnected) => {
+                println!("Config watcher disconnected.");
+                break;
+            }
+        }
+    }
+}
+
+pub fn save_config(config: &Config) -> Result<(), std::io::Error> {
+    let toml_str = toml::to_string_pretty(&config)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::write("config.toml", toml_str)
+}
+
+================
+File: main.rs
+================
+// main.rs
+
+mod config_manager;
+mod system_info;
+mod remote;
+mod server;
+mod updater; // <-- New updater module
+
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex, RwLock};
+use std::collections::HashMap;
+use config_manager::Config;
+use system_info::SystemData;
+use remote::RemoteStatus;
+use server::AppState;
+use tokio::sync::watch;
+
+fn ensure_config_exists() -> std::io::Result<()> {
+    let config_path = "config.toml";
+    if !Path::new(config_path).exists() {
+        // The default configuration is embedded at compile time.
+        const DEFAULT_CONFIG: &str = include_str!("../config_default.toml");
+        fs::write(config_path, DEFAULT_CONFIG)?;
+        println!("Default configuration written to '{}'.", config_path);
+    }
+    Ok(())
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    // On startup, ensure that a config file exists.
+    if let Err(e) = ensure_config_exists() {
+        eprintln!("Failed to ensure config file exists: {}", e);
+    }
+
+    // Load the configuration (or use defaults if it fails).
+    let initial_config = match config_manager::load_config() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            println!("Failed to load config: {}. Using default.", e);
+            Config::default()
+        }
+    };
+    let config = Arc::new(RwLock::new(initial_config));
+
+    // Create a shutdown channel.
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Spawn a task to watch the config file and reload on changes.
+    let config_clone = Arc::clone(&config);
+    tokio::spawn(config_manager::watch_config(config_clone, shutdown_rx.clone()));
+
+    // Initialize system data and spawn a task to poll system metrics.
+    let system_data = Arc::new(Mutex::new(SystemData::new()));
+    let system_data_clone = Arc::clone(&system_data);
+    tokio::spawn(system_info::poll_system_metrics(system_data_clone, shutdown_rx.clone()));
+
+    // Initialize remote statuses and spawn a task to poll remote Pylons.
+    let remote_statuses = Arc::new(Mutex::new(HashMap::<String, RemoteStatus>::new()));
+    let config_clone2 = Arc::clone(&config);
+    let remote_statuses_clone = Arc::clone(&remote_statuses);
+    tokio::spawn(remote::poll_remote_pylons(config_clone2, remote_statuses_clone, shutdown_rx.clone()));
+
+    // ---- Spawn the auto-update task ----
+    let config_clone3 = Arc::clone(&config);
+    tokio::spawn(updater::auto_update_loop(config_clone3, shutdown_rx.clone()));
+
+    // Determine which port to use.
+    let base_port = config.read().unwrap().local_port.unwrap_or(6989);
+    let server_port = server::find_open_port(base_port).await;
+    if server_port != base_port {
+        println!("Port {} was in use. Running on port {} instead.", base_port, server_port);
+    }
+
+    // Build our shared application state.
+    let state = AppState {
+        config: Arc::clone(&config),
+        system_data: Arc::clone(&system_data),
+        remote_statuses: Arc::clone(&remote_statuses),
+    };
+
+    // Start the web server and set up graceful shutdown.
+    let server = server::run_server(server_port, state);
+
+    tokio::select! {
+        res = server => {
+            res
+        },
+        _ = tokio::signal::ctrl_c() => {
+            println!("Received ctrl+c, shutting down gracefully...");
+            let _ = shutdown_tx.send(true);
+            Ok(())
+        }
+    }
+}
+
+================
+File: remote.rs
+================
+// src/remote.rs
+
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use tokio::time::{sleep, Duration};
+use chrono::{DateTime, Utc};
+use serde::{Serialize, Deserialize};
+use reqwest::Client;
+use serde_json::Value;
+use tokio::sync::watch;
+use crate::config_manager::Config;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoteStatus {
+    pub ip: String,
+    pub port: u16,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub data: Option<Value>, // remote metrics as JSON
+    pub online: bool,
+    pub name: Option<String>,
+    pub location: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Now accepts a shutdown receiver so it can exit gracefully.
+/// Also performs peer discovery by reading the "remote_pylons" field returned
+/// by remote servers and adding new ones to the polling list.
+pub async fn poll_remote_pylons(
+    config_arc: Arc<std::sync::RwLock<Config>>,
+    remote_statuses: Arc<Mutex<HashMap<String, RemoteStatus>>>,
+    mut shutdown: watch::Receiver<bool>
+) {
+    let client = Client::new();
+    // Discovered peers (not in the initial config)
+    let mut discovered_peers: Vec<crate::config_manager::RemotePylonConfig> = Vec::new();
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => {
+                if *shutdown.borrow() {
+                    println!("Shutting down remote poller.");
+                    break;
+                }
+            },
+            _ = async {
+                // Build list of all remotes to poll: config.remote_pylons + discovered_peers (deduplicated)
+                let mut all_remotes: Vec<crate::config_manager::RemotePylonConfig> = Vec::new();
+                {
+                    let config = config_arc.read().unwrap().clone();
+                    if let Some(remote_list) = config.remote_pylons {
+                        all_remotes.extend(remote_list);
+                    }
+                }
+                // Add discovered peers that are not already in all_remotes.
+                for peer in discovered_peers.iter() {
+                    let key = format!("{}:{}", peer.ip, peer.port);
+                    if !all_remotes.iter().any(|r| format!("{}:{}", r.ip, r.port) == key) {
+                        all_remotes.push(peer.clone());
+                    }
+                }
+                
+                for remote in all_remotes {
+                    let key = format!("{}:{}", remote.ip, remote.port);
+                    let url = format!("http://{}:{}/api/metrics", remote.ip, remote.port);
+                    let req = client.get(&url)
+                        .bearer_auth(remote.token.clone())
+                        .timeout(Duration::from_secs(5))
+                        .send()
+                        .await;
+                    let mut status = RemoteStatus {
+                        ip: remote.ip.clone(),
+                        port: remote.port,
+                        last_seen: None,
+                        data: None,
+                        online: false,
+                        name: remote.name.clone(),
+						location: remote.location.clone(),
+						description: remote.description.clone()
+                    };
+                    match req {
+                        Ok(resp) => {
+                            if resp.status().is_success() {
+                                if let Ok(json_data) = resp.json::<Value>().await {
+                                    status.data = Some(json_data.clone());
+                                    status.online = true;
+                                    status.last_seen = Some(Utc::now());
+                                    // Peer discovery: if the remote data contains "remote_pylons", add them
+                                    if let Some(peers) = json_data.get("remote_pylons") {
+                                        if let Some(array) = peers.as_array() {
+                                            for peer_val in array {
+                                                if let Ok(peer_config) = serde_json::from_value::<crate::config_manager::RemotePylonConfig>(peer_val.clone()) {
+                                                    let peer_key = format!("{}:{}", peer_config.ip, peer_config.port);
+                                                    if !discovered_peers.iter().any(|p| format!("{}:{}", p.ip, p.port) == peer_key) &&
+                                                       peer_key != key { // avoid self
+                                                        discovered_peers.push(peer_config);
+                                                        println!("Discovered new peer: {}", peer_key);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            println!("Error connecting to remote {}: {}", key, e);
+                        }
+                    }
+                    let mut statuses = remote_statuses.lock().unwrap();
+                    statuses.insert(key, status);
+                }
+            } => {}
+        }
+        sleep(Duration::from_secs(10)).await;
+    }
+}
+
+================
+File: server.rs
+================
+// src/server.rs
+
+use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder, middleware::Logger};
+use actix_session::{Session, SessionMiddleware};
+use actix_session::storage::CookieSessionStore;
+use actix_web::cookie::Key;
+use serde::Deserialize;
+use serde_json::json;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
+use mime_guess::from_path;
+use rust_embed::RustEmbed;
+
+// These modules are assumed to be defined elsewhere in your project.
+use crate::remote::RemoteStatus;
+use crate::system_info::SystemData;
+
+pub const PYLON_VERSION: &str = "0.3.1";
+
+
+/// The shared application state.
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Arc<RwLock<crate::config_manager::Config>>,
+    pub system_data: Arc<Mutex<SystemData>>,
+    pub remote_statuses: Arc<Mutex<HashMap<String, RemoteStatus>>>,
+}
+
+/// Embed the contents of the `static/` folder into the binary.
+#[derive(RustEmbed)]
+#[folder = "static/"] // Ensure this path is relative to your Cargo.toml location.
+struct Asset;
+
+/// Handler to serve embedded static files.
+///
+/// This route matches URLs of the form `/static/{filename:.*}`.
+async fn serve_embedded_file(req: HttpRequest) -> impl Responder {
+    // Extract the requested file path from the URL.
+    let filename: String = req.match_info().query("filename").parse().unwrap_or_default();
+
+    // Look up the file in the embedded assets.
+    match Asset::get(&filename) {
+        Some(content) => {
+            // Guess the MIME type based on the file extension.
+            let mime_type = from_path(&filename).first_or_octet_stream();
+            HttpResponse::Ok()
+                .content_type(mime_type.as_ref())
+                .body(content.data)
+        },
+        None => HttpResponse::NotFound().body("Not Found"),
+    }
+}
+
+// This endpoint triggers an update check when called.
+#[get("/api/check_update")]
+async fn check_update_endpoint(data: web::Data<AppState>) -> impl Responder {
+    // Call the updater's check_for_update function.
+    match crate::updater::check_for_update(Arc::clone(&data.config)).await {
+        Ok(updated) => {
+            if updated {
+                HttpResponse::Ok().json(json!({"status": "updated"}))
+            } else {
+                HttpResponse::Ok().json(json!({"status": "up-to-date"}))
+            }
+        }
+        Err(e) => {
+            // Fail silently by logging the error and returning an OK response.
+            println!("Error during update check: {}", e);
+            HttpResponse::Ok().json(json!({"status": "error", "message": e.to_string()}))
+        }
+    }
+}
+
+/// GET /
+///
+/// Serves the main HTML page.
+#[get("/")]
+async fn index() -> impl Responder {
+    let html = r#"<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pylon Dashboard 🚀✨</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <!-- Web Manifest -->
+  <link rel="manifest" href="/static/site.webmanifest">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/android-chrome-192x192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/android-chrome-512x512.png">
+  <link rel="shortcut icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="theme-color" content="black" /> 
+  <meta name="msapplication-TileColor" content="black" />
+  <script src="/static/js/progressbar.min.js"></script>
+  <script src="/static/js/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1 id="localPylonName">Pylon Dashboard</h1>
+    <div class="card" id="localMetricsCard">
+      <div class="gauges">
+        <div class="gauge-container">
+          <div id="cpuGauge" class="gauge"></div>
+          <div class="gauge-label">⚡ CPU Usage</div>
+        </div>
+        <div class="gauge-container">
+          <div id="ramGauge" class="gauge"></div>
+          <div class="gauge-label">📊 RAM Usage</div>
+          <div id="ramUsageText" style="margin-top: 8px; font-size: 1rem;"></div>
+        </div>
+        <div class="gauge-container">
+          <div id="diskGauge" class="gauge"></div>
+          <div class="gauge-label">💾 Disk Usage</div>
+          <div id="diskUsageText" style="margin-top: 8px; font-size: 1rem;"></div>
+        </div>
+      </div>
+      <div class="services" id="servicesStatus"></div>
+    </div>
+    <h2>Remote Pylons 🌐</h2>
+    <div id="remoteContainer"></div>
+    <div class="card" id="networkCard">
+      <h2>Network Throughput 🌐</h2>
+      <div class="network-chart-container">
+        <canvas id="networkChart"></canvas>
+      </div>
+    </div>
+    <div class="card" id="adminLoginCard">
+      <h2>Admin Access</h2>
+      <input type="password" id="adminKeyInput" class="adminInput" placeholder="Enter Admin Key">
+      <button id="adminKeySubmit" class="adminSubmit">Unlock Admin Features</button>
+      <p id="adminError" style="color: red; display: none;">Incorrect key.</p>
+    </div>
+    <div id="adminContent"></div>
+  </div>
+  <script type="module" src="/static/js/main.js"></script>
+  <div id="pylonModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>Pylon Description</h2>
+      <p id="modalDescription"></p>
+    </div>
+  </div>
+</body>
+</html>
+"#;
+    HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
+}
+
+/// POST /api/login
+///
+/// Accepts a JSON payload with the admin token and, if valid, marks the session as authenticated.
+#[derive(Deserialize)]
+struct LoginRequest {
+    token: String,
+}
+
+#[post("/api/login")]
+async fn login(
+    data: web::Data<AppState>,
+    login_req: web::Json<LoginRequest>,
+    session: Session,
+) -> impl Responder {
+    let config = data.config.read().unwrap();
+    if login_req.token == config.token {
+        session.insert("admin_authenticated", true).unwrap();
+        HttpResponse::Ok().json(json!({"status": "logged in"}))
+    } else {
+        HttpResponse::Unauthorized().json(json!({"error": "Invalid credentials"}))
+    }
+}
+
+/// GET /api/admin-content
+///
+/// Returns admin-only HTML if the session is authenticated.
+#[get("/api/admin-content")]
+async fn admin_content(session: Session) -> impl Responder {
+    if let Ok(Some(true)) = session.get::<bool>("admin_authenticated") {
+        let admin_html = r#"
+      <div class="card" id="systemInfoCard">
+        <h2>System Information 📋</h2>
+        <div id="systemDetails"></div>
+      </div>
+      <div class="card" id="otherMetricsCard">
+        <h2>Other Metrics ⏱️</h2>
+        <div>Uptime: <span id="uptime">0</span> seconds</div>
+        <div>Load Average: <span id="loadAverage">0</span></div>
+      </div>
+      <div class="card" id="topProcessesCard">
+        <h2>Top 5 Processes by Memory</h2>
+        <table id="topProcessesTable">
+          <thead>
+            <tr><th>PID</th><th>Name</th><th>Memory (MB)</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card" id="managePylonsCard">
+        <h2>Manage Remote Pylons</h2>
+        <form id="pylonForm">
+          <input type="text" id="pylonIp" placeholder="IP Address" required>
+          <input type="number" id="pylonPort" placeholder="Port" required>
+          <input type="text" id="pylonToken" placeholder="Token" required>
+          <input type="text" id="pylonName" placeholder="Name (optional)">
+          <button type="submit">Add Pylon</button>
+        </form>
+        <h3>Current Remote Pylons</h3>
+        <ul id="pylonList"></ul>
+      </div>
+        "#;
+        HttpResponse::Ok().content_type("text/html; charset=utf-8").body(admin_html)
+    } else {
+        HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}))
+    }
+}
+
+/// GET /api/metrics
+///
+/// Returns local metrics as JSON.
+#[get("/api/metrics")]
+async fn metrics(data: web::Data<AppState>, _req: HttpRequest) -> impl Responder {
+    let sys_data = data.system_data.lock().unwrap();
+    let config = data.config.read().unwrap();
+    let local_name = config.name.clone().unwrap_or_else(|| "Local Pylon".to_string());
+    let local_description = config.description.clone().unwrap_or_else(|| "Sorry, no description was provided for this Pylon.".to_string());
+    let local_location = config.location.clone().unwrap_or_else(|| "Unknown Location".to_string());
+    let response = json!({
+        "name": local_name,
+        "description": local_description,
+        "location": local_location,
+        "version": PYLON_VERSION,
+        "cached": sys_data.cached,
+        "polled": sys_data.polled,
+        "remote_pylons": config.remote_pylons,
+    });
+    HttpResponse::Ok().json(response)
+}
+
+/// GET /api/remotes
+///
+/// Returns remote pylon statuses as JSON.
+#[get("/api/remotes")]
+async fn remotes(data: web::Data<AppState>) -> impl Responder {
+    let statuses = data.remote_statuses.lock().unwrap();
+    let response: Vec<_> = statuses.values().cloned().collect();
+    HttpResponse::Ok().json(response)
+}
+
+/// GET /api/config/pylons
+///
+/// Returns the current remote pylons configuration.
+#[get("/api/config/pylons")]
+async fn get_pylons(data: web::Data<AppState>) -> impl Responder {
+    let config = data.config.read().unwrap();
+    HttpResponse::Ok().json(&config.remote_pylons)
+}
+
+#[derive(Deserialize)]
+struct RemovePylonRequest {
+    ip: String,
+    port: u16,
+}
+
+/// POST /api/config/pylons/add
+///
+/// Adds a new remote pylon to the configuration.
+#[post("/api/config/pylons/add")]
+async fn add_pylon(
+    data: web::Data<AppState>,
+    new_pylon: web::Json<crate::config_manager::RemotePylonConfig>,
+) -> impl Responder {
+    let mut config = data.config.write().unwrap();
+    if config.remote_pylons.is_none() {
+        config.remote_pylons = Some(vec![]);
+    }
+    if let Some(ref mut pylons) = config.remote_pylons {
+        pylons.push(new_pylon.into_inner());
+    }
+    match crate::config_manager::save_config(&config) {
+        Ok(_) => HttpResponse::Ok().json(json!({"status": "added"})),
+        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    }
+}
+
+/// POST /api/config/pylons/remove
+///
+/// Removes a remote pylon from the configuration.
+#[post("/api/config/pylons/remove")]
+async fn remove_pylon(
+    data: web::Data<AppState>,
+    info: web::Json<RemovePylonRequest>,
+) -> impl Responder {
+    let mut config = data.config.write().unwrap();
+    if let Some(ref mut pylons) = config.remote_pylons {
+        pylons.retain(|p| !(p.ip == info.ip && p.port == info.port));
+    }
+    match crate::config_manager::save_config(&config) {
+        Ok(_) => HttpResponse::Ok().json(json!({"status": "removed"})),
+        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    }
+}
+
+/// Checks if a port is available.
+async fn port_available(port: u16) -> bool {
+    use tokio::net::TcpListener;
+    match TcpListener::bind(("127.0.0.1", port)).await {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+/// Finds an open port starting from `start_port`.
+pub async fn find_open_port(start_port: u16) -> u16 {
+    let mut port = start_port;
+    loop {
+        if port_available(port).await {
+            break;
+        }
+        port += 1;
+    }
+    port
+}
+
+/// Runs the web server.
+pub async fn run_server(port: u16, state: AppState) -> std::io::Result<()> {
+    println!("Starting server on http://127.0.0.1:{}", port);
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(state.clone()))
+            .wrap(Logger::default())
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                Key::from(&[0; 64]) // In production, use a secure key!
+            ))
+            // Route to serve embedded static files.
+            .route("/static/{filename:.*}", web::get().to(serve_embedded_file))
+            .service(index)
+            .service(login)
+            .service(metrics)
+            .service(remotes)
+            .service(get_pylons)
+            .service(add_pylon)
+            .service(remove_pylon)
+            .service(admin_content)
+			.service(check_update_endpoint)
+    })
+    .bind(("0.0.0.0", port))?
+    .run()
+    .await
+}
+
+================
+File: system_info.rs
+================
+// src/system_info.rs
+
+use sysinfo::{System, SystemExt, CpuExt, DiskExt, NetworkExt, LoadAvg, ProcessExt, PidExt};
+use tokio::time::{sleep, Duration};
+use serde::Serialize;
+use std::sync::{Mutex, Arc};
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CachedInfo {
+    pub os_version: String,
+    pub apache_version: String,
+    pub php_version: String,
+    pub mariadb_version: String,
+    pub rust_version: String,
+    pub node_version: String,
+    pub npm_version: String,
+    pub processor: String,
+    pub total_ram: u64,
+    pub disk_capacity: u64,
+    pub disk_usage: u64,
+    pub boot_time: u64,
+    // New: average and maximum CPU speed in MHz
+    pub average_cpu_speed_mhz: u64,
+    pub max_cpu_speed_mhz: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ServiceStatus {
+    pub name: String,
+    pub running: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub name: String,
+    pub memory: u64, // memory in KB
+}
+
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct PolledMetrics {
+    pub cpu_usage: f32,
+    pub used_ram: u64,
+    pub available_ram: u64,
+    pub network_received: u64,
+    pub network_transmitted: u64,
+    pub uptime: u64,
+    pub load_average: LoadAvg,
+    pub swap_used: u64,
+    pub swap_total: u64,
+    pub disk_free: u64,
+    pub disk_usage_percent: f32,
+    pub services: Vec<ServiceStatus>,
+    pub top_processes: Vec<ProcessInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SystemData {
+    pub cached: CachedInfo,
+    pub polled: PolledMetrics,
+}
+
+impl SystemData {
+    pub fn new() -> Self {
+        let mut sys = System::new_all();
+        // Refresh once to get initial values.
+        sys.refresh_all();
+
+        // Compute disk totals.
+        let (total_capacity, total_usage) = sys.disks().iter().fold((0, 0), |(cap, used), disk| {
+            (cap + disk.total_space(), used + (disk.total_space() - disk.available_space()))
+        });
+
+        // Compute CPU speed from all available CPUs.
+        let cpus = sys.cpus();
+        let (avg_cpu_speed, max_cpu_speed) = if !cpus.is_empty() {
+            let total: u64 = cpus.iter().map(|cpu| cpu.frequency()).sum();
+            let avg = total / (cpus.len() as u64);
+            let max = cpus.iter().map(|cpu| cpu.frequency()).max().unwrap_or(avg);
+            (avg, max)
+        } else {
+            (0, 0)
+        };
+
+        let cached = CachedInfo {
+            os_version: get_os_version(),
+            apache_version: get_command_version("apache2", "-v"),
+            php_version: get_command_version("php", "-v"),
+            mariadb_version: get_command_version("mysql", "--version"),
+            rust_version: get_command_version("rustc", "--version"),
+            node_version: get_command_version("node", "-v"),
+            npm_version: get_command_version("npm", "-v"),
+            processor: get_processor_info(),
+            total_ram: sys.total_memory(),
+            disk_capacity: total_capacity,
+            disk_usage: total_usage,
+            boot_time: sys.boot_time(),
+            average_cpu_speed_mhz: avg_cpu_speed,
+            max_cpu_speed_mhz: max_cpu_speed,
+        };
+
+        Self {
+            cached,
+            polled: PolledMetrics::default(),
+        }
+    }
+}
+
+fn get_os_version() -> String {
+    if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+        for line in content.lines() {
+            if line.starts_with("PRETTY_NAME=") {
+                return line.replace("PRETTY_NAME=", "").replace("\"", "");
+            }
+        }
+    }
+    "Unknown OS".to_string()
+}
+
+fn get_command_version(cmd: &str, arg: &str) -> String {
+    if let Ok(output) = std::process::Command::new(cmd).arg(arg).output() {
+        if output.status.success() {
+            let s = String::from_utf8_lossy(&output.stdout).to_string();
+            return s.lines().next().unwrap_or("Unknown").to_string();
+        }
+    }
+    "Not installed".to_string()
+}
+
+fn get_processor_info() -> String {
+    if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+        for line in content.lines() {
+            if line.starts_with("model name") {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() > 1 {
+                    return parts[1].trim().to_string();
+                }
+            }
+        }
+    }
+    "Unknown Processor".to_string()
+}
+
+/// Poll system metrics (including the top five memory‐hungry processes)
+pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tokio::sync::watch::Receiver<bool>) {
+    let mut sys = System::new_all();
+    loop {
+        if *shutdown.borrow() {
+            println!("Shutting down system metrics poller.");
+            break;
+        }
+        sys.refresh_all();
+
+        let cpu_usage = sys.global_cpu_info().cpu_usage();
+        let used_ram = sys.used_memory();
+        let available_ram = sys.available_memory();
+
+        // Calculate disk usage.
+        let (total_capacity, total_free) = sys.disks().iter().fold((0, 0), |(cap, free), disk| {
+            (cap + disk.total_space(), free + disk.available_space())
+        });
+        let used_disk = if total_capacity > 0 { total_capacity - total_free } else { 0 };
+        let disk_usage_percent = if total_capacity > 0 {
+            used_disk as f32 / total_capacity as f32
+        } else { 0.0 };
+
+        // Sum network stats.
+        let (mut network_received, mut network_transmitted) = (0, 0);
+        for (_iface, data_net) in sys.networks() {
+            network_received += data_net.received();
+            network_transmitted += data_net.transmitted();
+        }
+
+        let uptime = sys.uptime();
+        let load_average = sys.load_average();
+        let swap_total = sys.total_swap();
+        let swap_used = sys.used_swap();
+
+        // Check for service statuses.
+        let mut apache_running = false;
+        let mut mariadb_running = false;
+        for process in sys.processes().values() {
+            let proc_name = process.name().to_lowercase();
+            if proc_name.contains("apache2") {
+                apache_running = true;
+            }
+            if proc_name.contains("mariadb") || proc_name.contains("mysql") {
+                mariadb_running = true;
+            }
+        }
+        let services = vec![
+            ServiceStatus { name: "Apache2".into(), running: apache_running },
+            ServiceStatus { name: "MariaDB".into(), running: mariadb_running },
+        ];
+
+        // Calculate top 5 processes by memory usage.
+        let mut processes: Vec<_> = sys.processes().values().collect();
+        processes.sort_by(|a, b| b.memory().cmp(&a.memory()));
+        let top_processes: Vec<ProcessInfo> = processes.iter().take(5).map(|process| ProcessInfo {
+            pid: process.pid().as_u32(),
+            name: process.name().to_string(),
+            memory: process.memory(),
+        }).collect();
+
+        // Update CPU speed info on each poll.
+        let cpus = sys.cpus();
+        let (avg_cpu_speed, max_cpu_speed) = if !cpus.is_empty() {
+            let total: u64 = cpus.iter().map(|cpu| cpu.frequency()).sum();
+            let avg = total / (cpus.len() as u64);
+            let max = cpus.iter().map(|cpu| cpu.frequency()).max().unwrap_or(avg);
+            (avg, max)
+        } else {
+            (0, 0)
+        };
+
+        {
+            let mut data_lock = data.lock().unwrap();
+            data_lock.polled.cpu_usage = cpu_usage;
+            data_lock.polled.used_ram = used_ram;
+            data_lock.polled.available_ram = available_ram;
+            data_lock.polled.network_received = network_received;
+            data_lock.polled.network_transmitted = network_transmitted;
+            data_lock.polled.uptime = uptime;
+            data_lock.polled.load_average = load_average;
+            data_lock.polled.swap_total = swap_total;
+            data_lock.polled.swap_used = swap_used;
+            data_lock.polled.disk_free = total_free;
+            data_lock.polled.disk_usage_percent = disk_usage_percent;
+            data_lock.polled.services = services;
+            data_lock.polled.top_processes = top_processes;
+            data_lock.cached.average_cpu_speed_mhz = avg_cpu_speed;
+            data_lock.cached.max_cpu_speed_mhz = max_cpu_speed;
+        }
+
+        tokio::select! {
+            _ = shutdown.changed() => {
+                if *shutdown.borrow() {
+                    println!("Shutting down system metrics poller.");
+                    break;
+                }
+            },
+            _ = sleep(Duration::from_secs(1)) => {}
+        }
+    }
+}
+
+================
+File: updater.rs
+================
+use std::env;
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::{Arc, RwLock};
+
+use tokio::sync::watch;
+use tokio::time::{sleep, Duration};
+
+use reqwest::Client;
+use crate::config_manager::Config;
+
+/// Disables auto-update by setting the auto_update flag to false.
+fn disable_auto_update(config_arc: &Arc<RwLock<Config>>) {
+    if let Ok(mut cfg) = config_arc.write() {
+        cfg.auto_update = Some(false);
+    }
+    println!("*** Auto update disabled due to update error. ***");
+}
+
+/// Checks for a new version and, if found, downloads and installs it.
+/// This updater backs up the current binary and then replaces it.
+/// Finally, it uses `sudo systemctl restart pylon` to restart the service.
+pub async fn check_for_update(config_arc: Arc<RwLock<Config>>) -> Result<bool, Box<dyn std::error::Error>> {
+    println!("================== Starting Update Check ==================");
+    let client = Client::new();
+
+    // Read configuration.
+    let config = config_arc.read().unwrap().clone();
+    if !config.auto_update.unwrap_or(false) {
+        println!("Auto update is disabled in configuration.");
+        return Ok(false);
+    }
+
+    let master_update_url = config.master_update_url.unwrap_or_default();
+    if master_update_url.is_empty() {
+        println!("Master update URL not configured. Exiting update process.");
+        return Ok(false);
+    }
+    println!("Master update URL: {}", master_update_url);
+
+    // Prepare update URLs.
+    let version_url = format!("{}?action=version", master_update_url);
+    let binary_url  = format!("{}?action=binary", master_update_url);
+
+    println!("Checking for updates from: {}", version_url);
+
+    // Fetch version info.
+    let resp = match client.get(&version_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Error fetching version info: {}", e);
+            return Ok(false);
+        }
+    };
+
+    if !resp.status().is_success() {
+        println!("Failed to fetch version info: HTTP {}", resp.status());
+        return Ok(false);
+    }
+
+    let latest_version = resp.text().await?.trim().to_string();
+    println!("Latest version from server: {}", latest_version);
+
+    if latest_version == crate::server::PYLON_VERSION {
+        println!("No update needed. Current version ({}) is up-to-date.", crate::server::PYLON_VERSION);
+        return Ok(false);
+    }
+    println!("Update available: current version {} vs. new version {}", crate::server::PYLON_VERSION, latest_version);
+
+    // Request the new binary.
+    println!("Requesting new binary from: {}", binary_url);
+    let bin_resp = match client.get(&binary_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Error requesting new binary: {}", e);
+            return Ok(false);
+        }
+    };
+
+    if !bin_resp.status().is_success() {
+        println!("Failed to download new binary: HTTP {}", bin_resp.status());
+        return Ok(false);
+    }
+
+    let data = match bin_resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            println!("Error reading binary data: {}", e);
+            return Ok(false);
+        }
+    };
+
+    println!("Downloaded binary data: {} bytes", data.len());
+    if data.len() == 0 {
+        println!("Error: Downloaded binary is empty!");
+        return Ok(false);
+    }
+
+    // Write the new binary to a temporary file.
+    let mut tmp_path: PathBuf = env::temp_dir();
+    tmp_path.push("pylon_new");
+    println!("Writing new binary to temporary file: {:?}", tmp_path);
+
+    if let Err(e) = fs::write(&tmp_path, &data) {
+        println!("Failed to write new binary to {:?}: {}", tmp_path, e);
+        if e.kind() == io::ErrorKind::PermissionDenied {
+            disable_auto_update(&config_arc);
+        }
+        return Ok(false);
+    }
+
+    // Set executable permissions on the new binary.
+    println!("Setting executable permissions on temporary binary: {:?}", tmp_path);
+    if let Err(e) = Command::new("chmod").arg("+x").arg(&tmp_path).status() {
+        println!("Failed to set executable permissions on {:?}: {}", tmp_path, e);
+        disable_auto_update(&config_arc);
+        return Ok(false);
+    }
+
+    // Check that systemctl is available.
+    println!("Verifying systemctl availability...");
+    if Command::new("systemctl").arg("--version").output().is_err() {
+        println!("systemctl not available. Disabling auto-update.");
+        disable_auto_update(&config_arc);
+        return Ok(false);
+    }
+
+    // Determine current executable path.
+    let current_exe = match env::current_exe() {
+        Ok(path) => path,
+        Err(e) => {
+            println!("Could not determine current executable path: {}", e);
+            disable_auto_update(&config_arc);
+            return Ok(false);
+        }
+    };
+    println!("Current binary path: {:?}", current_exe);
+
+    // Verify that the parent directory is writable.
+    if let Some(parent) = current_exe.parent() {
+        println!("Checking write permissions for directory: {:?}", parent);
+        let test_path = parent.join("temp_test_file");
+        match fs::write(&test_path, b"test") {
+            Ok(_) => {
+                println!("Directory is writable. Removing test file.");
+                let _ = fs::remove_file(&test_path);
+            },
+            Err(e) => {
+                println!("Directory {:?} is not writable: {}", parent, e);
+                disable_auto_update(&config_arc);
+                return Ok(false);
+            }
+        }
+    } else {
+        println!("Unable to determine parent directory for binary.");
+        disable_auto_update(&config_arc);
+        return Ok(false);
+    }
+
+    // Backup current binary.
+    let backup_exe = current_exe.with_extension("old");
+    println!("Backing up current binary: {:?} -> {:?}", current_exe, backup_exe);
+    if let Err(e) = fs::rename(&current_exe, &backup_exe) {
+        println!("Failed to backup current binary: {}", e);
+        disable_auto_update(&config_arc);
+        return Ok(false);
+    }
+
+    // Replace current binary with the new one.
+    println!("Replacing current binary with new binary.");
+    if let Err(e) = fs::rename(&tmp_path, &current_exe) {
+        println!("Failed to move new binary into place: {}", e);
+        // Attempt to restore backup.
+        let _ = fs::rename(&backup_exe, &current_exe);
+        disable_auto_update(&config_arc);
+        return Ok(false);
+    }
+    println!("New binary successfully installed at {:?}", current_exe);
+
+    // Restart the service using sudo systemctl.
+    println!("Attempting to restart the service via sudo systemctl restart pylon");
+    let restart_status = Command::new("sudo")
+        .arg("systemctl")
+        .arg("restart")
+        .arg("pylon")
+        .status();
+
+    match restart_status {
+        Ok(status) => {
+            // Treat a SIGTERM exit (signal 15) as a successful restart because
+            // systemd sends SIGTERM to stop the old instance.
+            if status.success() || was_sigterm(&status) {
+                println!("Service restart triggered successfully.");
+                println!("================== Update Process Completed ==================");
+                Ok(true)
+            } else {
+                println!("systemctl restart returned non-zero exit code: {}", status);
+                disable_auto_update(&config_arc);
+                println!("================== Update Process Failed ==================");
+                Ok(false)
+            }
+        },
+        Err(e) => {
+            println!("Failed to execute sudo systemctl restart: {}", e);
+            disable_auto_update(&config_arc);
+            println!("================== Update Process Failed ==================");
+            Ok(false)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn was_sigterm(status: &std::process::ExitStatus) -> bool {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal() == Some(15)
+}
+
+#[cfg(not(unix))]
+fn was_sigterm(_status: &std::process::ExitStatus) -> bool {
+    false
+}
+
+/// Runs the auto-update loop:
+/// - Checks for an update immediately, then every 24 hours.
+/// - Exits if auto-update is disabled or a shutdown signal is received.
+pub async fn auto_update_loop(config_arc: Arc<RwLock<Config>>, mut shutdown: watch::Receiver<bool>) {
+    println!("================== Starting Auto Update Loop ==================");
+    let _ = check_for_update(Arc::clone(&config_arc)).await;
+
+    loop {
+        if !config_arc.read().unwrap().auto_update.unwrap_or(false) {
+            println!("Auto update disabled. Exiting update loop.");
+            break;
+        }
+        tokio::select! {
+            _ = shutdown.changed() => {
+                if *shutdown.borrow() {
+                    println!("Shutdown signal received. Exiting auto update loop.");
+                    break;
+                }
+            },
+            _ = sleep(Duration::from_secs(24 * 3600)) => {
+                println!("24 hours elapsed. Checking for updates.");
+                let _ = check_for_update(Arc::clone(&config_arc)).await;
+            }
+        }
+    }
+    println!("================== Auto Update Loop Terminated ==================");
+}
+
+
+
+================================================================
+End of Codebase
+================================================================

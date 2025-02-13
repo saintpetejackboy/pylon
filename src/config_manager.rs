@@ -39,6 +39,11 @@ pub struct Config {
     // NEW: auto-update configuration options
     pub auto_update: Option<bool>,
     pub master_update_url: Option<String>,
+
+    // NEW: List of service names to display (e.g. "apache2", "mariadb")
+    pub services: Option<Vec<String>>,
+    // NEW: List of software version keys to show (e.g. "os_version", "apache_version", etc.)
+    pub software_versions: Option<Vec<String>>,
 }
 
 impl Default for Config {
@@ -52,6 +57,16 @@ impl Default for Config {
             location: None,
             auto_update: Some(false), // disabled by default
             master_update_url: Some("https://brinstar.top/pylon".into()),
+            services: Some(vec!["apache2".into(), "mariadb".into()]),
+            software_versions: Some(vec![
+                "os_version".into(),
+                "apache_version".into(),
+                "php_version".into(),
+                "mariadb_version".into(),
+                "rust_version".into(),
+                "node_version".into(),
+                "npm_version".into(),
+            ]),
         }
     }
 }

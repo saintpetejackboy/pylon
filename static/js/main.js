@@ -18,22 +18,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
 
   try {
-    // Attempt to fetch admin content. This request will include the session cookie.
     const response = await fetch('/api/admin-content');
     if (response.ok) {
-      // If the user is authenticated, hide the login form and load admin content.
       document.getElementById('adminLoginCard').style.display = 'none';
       const html = await response.text();
       document.getElementById('adminContent').innerHTML = html;
-      // Optionally, initialize admin-specific functionality.
       initAdminContent();
     } else {
-      // If not authenticated, make sure the login panel is visible.
       document.getElementById('adminLoginCard').style.display = 'block';
     }
   } catch (err) {
     console.error('Error fetching admin content on page load:', err);
-    // Fallback: show the login form if there’s an error.
     document.getElementById('adminLoginCard').style.display = 'block';
   }
   
@@ -48,41 +43,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  // ----- Admin Login Functionality -----
   const adminKeySubmit = document.getElementById('adminKeySubmit');
   if (adminKeySubmit) {
     adminKeySubmit.addEventListener('click', loginAdmin);
   }
-  // Auto–hide the login panel if already unlocked
   if (sessionStorage.getItem('adminUnlocked') === 'true') {
     document.getElementById('adminLoginCard').style.display = 'none';
   }
 
-  // ----- Initialize Gauges and Chart -----
   const { cpuGauge, ramGauge, diskGauge, networkChart } = initGauges();
   const startTime = Date.now();
   const maxDataPoints = 30;
   let previousReceived = null;
   let previousTransmitted = null;
   
-  // ----- Callback: Update Local Gauges and Network Chart -----
   function updateGaugesCallback(data) {
-    // CPU Gauge
     cpuGauge.animate(data.polled.cpu_usage / 100);
 
-    // RAM Gauge
     const totalRam = data.cached.total_ram;
     const usedRam = data.polled.used_ram;
     const ramPercent = totalRam > 0 ? usedRam / totalRam : 0;
     ramGauge.animate(ramPercent);
-    const totalRamGB = (totalRam / 1024 / 1024).toFixed(2);
+    const totalRamMB = (totalRam / 1024 / 1024).toFixed(2);
     const usedRamGB = (usedRam / 1024 / 1024).toFixed(2);
     const ramUsageText = document.getElementById('ramUsageText');
     if (ramUsageText) {
-      ramUsageText.innerText = `${usedRamGB} GB / ${totalRamGB} GB used`;
+      ramUsageText.innerText = `${usedRamGB} MB / ${totalRamMB} MB used`;
     }
 
-    // Disk Gauge
     const totalDisk = data.cached.disk_capacity;
     const usedDisk = totalDisk > 0 ? (totalDisk - data.polled.disk_free) : 0;
     const diskPercent = totalDisk > 0 ? usedDisk / totalDisk : 0;
@@ -94,14 +82,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       diskUsageText.innerText = `${usedDiskGB} GB / ${totalDiskGB} GB used`;
     }
 
-    // Update the local card description
     const localMetricsCard = document.getElementById('localMetricsCard');
     if (localMetricsCard) {
       localMetricsCard.setAttribute("data-description", data.description ||
         "Sorry, no description was provided for this Pylon.");
     }
 
-    // Update the network throughput chart
     const newReceived = data.polled.network_received;
     const newTransmitted = data.polled.network_transmitted;
     if (previousReceived !== null && previousTransmitted !== null) {
@@ -123,71 +109,73 @@ document.addEventListener('DOMContentLoaded', async function() {
     previousTransmitted = newTransmitted;
   }
   
-  // ----- Callback: Update Additional Dashboard Elements -----
-  function updateAdditionalElements(data) {
-    // Uptime and Load Average
-    const uptimeElem = document.getElementById('uptime');
-    if (uptimeElem) {
-      uptimeElem.innerText = data.polled.uptime;
+  // Callback: Update Additional Dashboard Elements
+function updateAdditionalElements(data) {
+  // Update uptime and load average
+  const uptimeElem = document.getElementById('uptime');
+  if (uptimeElem) {
+    uptimeElem.innerText = data.polled.uptime;
+  }
+  const loadAverageElem = document.getElementById('loadAverage');
+  if (loadAverageElem) {
+    loadAverageElem.innerText = `${data.polled.load_average.one} (1m), ${data.polled.load_average.five} (5m), ${data.polled.load_average.fifteen} (15m)`;
+  }
+  
+  // Update system details table
+  const systemDetails = document.getElementById('systemDetails');
+  if (systemDetails) {
+    const bootDate = new Date(data.cached.boot_time * 1000).toLocaleString();
+    const totalRam = data.cached.total_ram;
+    const usedRam = data.polled.used_ram;
+    const totalRamMB = (totalRam / 1024 / 1024).toFixed(2);
+    const usedRamGB = (usedRam / 1024 / 1024).toFixed(2);
+    const totalDisk = data.cached.disk_capacity;
+    const usedDisk = totalDisk > 0 ? (totalDisk - data.polled.disk_free) : 0;
+    const totalDiskGB = (totalDisk / (1024 * 1024 * 1024)).toFixed(2);
+    const usedDiskGB = (usedDisk / (1024 * 1024 * 1024)).toFixed(2);
+    const detailsHTML = `<table>
+        <tr><th>Property</th><th>Value</th></tr>
+        <tr><td>🌟 OS Version</td><td>${data.cached.os_version}</td></tr>
+        <tr><td>⚙️ Apache Version</td><td>${data.cached.apache_version}</td></tr>
+        <tr><td>🐘 PHP Version</td><td>${data.cached.php_version}</td></tr>
+        <tr><td>💽 MariaDB Version</td><td>${data.cached.mariadb_version}</td></tr>
+        <tr><td>🦀 Rust Version</td><td>${data.cached.rust_version}</td></tr>
+        <tr><td>📟 Node Version</td><td>${data.cached.node_version}</td></tr>
+        <tr><td>📦 npm Version</td><td>${data.cached.npm_version}</td></tr>
+        <tr><td>🚀 Pylon Version</td><td>${data.version}</td></tr>
+        <tr><td>🔧 Processor</td><td>${data.cached.processor}</td></tr>
+        <tr><td>💾 Total RAM</td><td>${totalRamMB} MB</td></tr>
+        <tr><td>💿 Disk Capacity</td><td>${totalDiskGB} GB</td></tr>
+        <tr><td>📀 Disk Usage</td><td>${usedDiskGB} GB</td></tr>
+        <tr><td>⏰ Boot Time</td><td>${bootDate}</td></tr>
+        </table>`;
+    systemDetails.innerHTML = detailsHTML;
+  }
+  
+  // Update the Top Processes Table
+  const topProcessesTableBody = document.getElementById('topProcessesTable')
+    ? document.getElementById('topProcessesTable').getElementsByTagName('tbody')[0]
+    : null;
+  if (topProcessesTableBody) {
+    topProcessesTableBody.innerHTML = "";
+    if (data.polled.top_processes && data.polled.top_processes.length > 0) {
+      data.polled.top_processes.forEach(proc => {
+        const row = document.createElement('tr');
+        const pidCell = document.createElement('td');
+        pidCell.innerText = proc.pid;
+        const nameCell = document.createElement('td');
+        nameCell.innerText = proc.name;
+        const memCell = document.createElement('td');
+        const memMB = (proc.memory / 1024 / 1024).toFixed(0);
+        memCell.innerText = memMB;
+        row.appendChild(pidCell);
+        row.appendChild(nameCell);
+        row.appendChild(memCell);
+        topProcessesTableBody.appendChild(row);
+      });
     }
-    const loadAverageElem = document.getElementById('loadAverage');
-    if (loadAverageElem) {
-      loadAverageElem.innerText = `${data.polled.load_average.one} (1m), ${data.polled.load_average.five} (5m), ${data.polled.load_average.fifteen} (15m)`;
-    }
-    // System Details Table
-    const systemDetails = document.getElementById('systemDetails');
-    if (systemDetails) {
-      const bootDate = new Date(data.cached.boot_time * 1000).toLocaleString();
-      const totalRam = data.cached.total_ram;
-      const usedRam = data.polled.used_ram;
-      const totalRamGB = (totalRam / 1024 / 1024).toFixed(2);
-      const usedRamGB = (usedRam / 1024 / 1024).toFixed(2);
-      const totalDisk = data.cached.disk_capacity;
-      const usedDisk = totalDisk > 0 ? (totalDisk - data.polled.disk_free) : 0;
-      const totalDiskGB = (totalDisk / (1024 * 1024 * 1024)).toFixed(2);
-      const usedDiskGB = (usedDisk / (1024 * 1024 * 1024)).toFixed(2);
-      const detailsHTML = `<table>
-          <tr><th>Property</th><th>Value</th></tr>
-          <tr><td>🌟 OS Version</td><td>${data.cached.os_version}</td></tr>
-          <tr><td>⚙️ Apache Version</td><td>${data.cached.apache_version}</td></tr>
-          <tr><td>🐘 PHP Version</td><td>${data.cached.php_version}</td></tr>
-          <tr><td>💽 MariaDB Version</td><td>${data.cached.mariadb_version}</td></tr>
-          <tr><td>🦀 Rust Version</td><td>${data.cached.rust_version}</td></tr>
-          <tr><td>📟 Node Version</td><td>${data.cached.node_version}</td></tr>
-          <tr><td>📦 npm Version</td><td>${data.cached.npm_version}</td></tr>
-          <tr><td>🚀 Pylon Version</td><td>${data.version}</td></tr>
-          <tr><td>🔧 Processor</td><td>${data.cached.processor}</td></tr>
-          <tr><td>💾 Total RAM</td><td>${totalRamGB} GB</td></tr>
-          <tr><td>💿 Disk Capacity</td><td>${totalDiskGB} GB</td></tr>
-          <tr><td>📀 Disk Usage</td><td>${usedDiskGB} GB</td></tr>
-          <tr><td>⏰ Boot Time</td><td>${bootDate}</td></tr>
-          </table>`;
-      systemDetails.innerHTML = detailsHTML;
-    }
-    // Top Processes Table
-    const topProcessesTableBody = document.getElementById('topProcessesTable')
-      ? document.getElementById('topProcessesTable').getElementsByTagName('tbody')[0]
-      : null;
-    if (topProcessesTableBody) {
-      topProcessesTableBody.innerHTML = "";
-      if (data.polled.top_processes && data.polled.top_processes.length > 0) {
-        data.polled.top_processes.forEach(proc => {
-          const row = document.createElement('tr');
-          const pidCell = document.createElement('td');
-          pidCell.innerText = proc.pid;
-          const nameCell = document.createElement('td');
-          nameCell.innerText = proc.name;
-          const memCell = document.createElement('td');
-          const memMB = (proc.memory / 1024).toFixed(2);
-          memCell.innerText = memMB;
-          row.appendChild(pidCell);
-          row.appendChild(nameCell);
-          row.appendChild(memCell);
-          topProcessesTableBody.appendChild(row);
-        });
-      }
-    }
-    // Services Status Lights
+  
+    // Update Services Status Lights
     const servicesDiv = document.getElementById('servicesStatus');
     if (servicesDiv) {
       servicesDiv.innerHTML = "";
@@ -206,23 +194,30 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
   }
+}
+
+
   
-  // ----- Callback: Update Remote Gauges -----
+  // ---- Updated: Remote Gauges Callback with full details and link ----
   function updateRemoteGaugesCallback(remotes) {
     window.remoteGauges = window.remoteGauges || {};
     remotes.forEach(remote => {
       const safeKey = remote.ip.replace(/\./g, '_') + "_" + remote.port;
       let remoteBlock = document.getElementById('remote_' + safeKey);
       if (!remoteBlock) {
-        // Create the remote block and its gauge containers.
         remoteBlock = document.createElement('div');
         remoteBlock.id = 'remote_' + safeKey;
         remoteBlock.className = "card";
         remoteBlock.style.marginBottom = "10px";
+        // Store full details if available.
         remoteBlock.setAttribute("data-description", remote.description || "Sorry, no description was provided for this Pylon.");
+        if(remote.data) {
+          remoteBlock.setAttribute("data-details", JSON.stringify(remote.data, null, 2));
+        }
         remoteBlock.style.cursor = "pointer";
         remoteBlock.addEventListener("click", function() {
-          showModal(this.getAttribute("data-description"));
+          const details = this.getAttribute("data-details") || this.getAttribute("data-description") || "No details available.";
+          showModal(`<pre>${details}</pre>`);
         });
   
         const header = document.createElement('h3');
@@ -233,6 +228,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         header.innerHTML = `🌍 <span class="pylon-server-name">${remoteDisplayName}</span>
             <span class="pylon-location">(${remoteLocation})</span>
             <span class="pylon-version">(v${remoteVersion})</span>`;
+        // Add a clickable link to open the remote pylon in a new tab.
+        const link = document.createElement('a');
+        link.href = `http://${remote.ip}`;
+        link.target = "_blank";
+        link.innerText = "🔗 🗔";
+        link.style.marginLeft = "10px";
+        header.appendChild(link);
+  
         remoteBlock.appendChild(header);
   
         const gaugesContainer = document.createElement('div');
@@ -305,7 +308,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   
         document.getElementById('remoteContainer').appendChild(remoteBlock);
   
-        // Initialize remote gauges and store them.
         window.remoteGauges[safeKey] = {
           cpu: new ProgressBar.Circle('#' + cpuGaugeId, {
             color: '#00ff00',
@@ -364,7 +366,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         window.remoteGauges[safeKey].disk.text.style.fontSize = '1rem';
       }
   
-      // Update remote gauges if online
       if (remote.online && remote.data) {
         const polled = remote.data.polled;
         const cached = remote.data.cached;
@@ -373,11 +374,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         const usedRam = polled.used_ram;
         const ramPercent = totalRam > 0 ? usedRam / totalRam : 0;
         window.remoteGauges[safeKey].ram.animate(ramPercent);
-        const totalRamGB = (totalRam / 1024 / 1024).toFixed(2);
+        const totalRamMB = (totalRam / 1024 / 1024).toFixed(2);
         const usedRamGB = (usedRam / 1024 / 1024).toFixed(2);
         const ramTextElem = document.getElementById('ramText_' + safeKey);
         if (ramTextElem) {
-          ramTextElem.innerText = `${usedRamGB} GB / ${totalRamGB} GB`;
+          ramTextElem.innerText = `${usedRamGB} GB / ${totalRamMB} GB`;
         }
         const totalDisk = cached.disk_capacity;
         const usedDisk = totalDisk > 0 ? (totalDisk - polled.disk_free) : 0;
@@ -409,7 +410,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         }
       } else {
-        // If offline, show an error indicator.
         const displayName = remote.name || (remote.ip + ':' + remote.port);
         if (remoteBlock) {
           remoteBlock.innerHTML = `<div style="font-size:1.5rem; text-align:center;">
@@ -420,7 +420,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   
-  // ----- Periodic Dashboard Update -----
   async function updateDashboard() {
     await fetchLocalMetrics(updateGaugesCallback, updateAdditionalElements);
     await fetchRemoteMetrics(updateRemoteGaugesCallback);

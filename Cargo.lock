@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "pylon"
-version = "0.2.3"
+version = "0.3.4"
 dependencies = [
  "actix-files",
  "actix-session",

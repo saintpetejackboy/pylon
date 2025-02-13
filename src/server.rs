@@ -15,7 +15,7 @@ use rust_embed::RustEmbed;
 use crate::remote::RemoteStatus;
 use crate::system_info::SystemData;
 
-pub const PYLON_VERSION: &str = "0.3.1";
+pub const PYLON_VERSION: &str = "0.3.4";
 
 
 /// The shared application state.
@@ -226,12 +226,32 @@ async fn metrics(data: web::Data<AppState>, _req: HttpRequest) -> impl Responder
     let local_name = config.name.clone().unwrap_or_else(|| "Local Pylon".to_string());
     let local_description = config.description.clone().unwrap_or_else(|| "Sorry, no description was provided for this Pylon.".to_string());
     let local_location = config.location.clone().unwrap_or_else(|| "Unknown Location".to_string());
+    
+    let cached_json = serde_json::to_value(&sys_data.cached).unwrap();
+    let filtered_cached = if let Some(allowed) = &config.software_versions {
+        if let Some(obj) = cached_json.as_object() {
+            let version_keys = ["os_version", "apache_version", "php_version", "mariadb_version", "rust_version", "node_version", "npm_version"];
+            let filtered: serde_json::Map<String, serde_json::Value> = obj.iter().filter(|(k, _)| {
+                if version_keys.contains(&k.as_str()) {
+                    allowed.contains(k)
+                } else {
+                    true
+                }
+            }).map(|(k,v)| (k.clone(), v.clone())).collect();
+            serde_json::Value::Object(filtered)
+        } else {
+            cached_json
+        }
+    } else {
+        cached_json
+    };
+    
     let response = json!({
         "name": local_name,
         "description": local_description,
         "location": local_location,
         "version": PYLON_VERSION,
-        "cached": sys_data.cached,
+        "cached": filtered_cached,
         "polled": sys_data.polled,
         "remote_pylons": config.remote_pylons,
     });

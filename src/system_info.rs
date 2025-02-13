@@ -3,7 +3,7 @@
 use sysinfo::{System, SystemExt, CpuExt, DiskExt, NetworkExt, LoadAvg, ProcessExt, PidExt};
 use tokio::time::{sleep, Duration};
 use serde::Serialize;
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CachedInfo {
@@ -19,7 +19,6 @@ pub struct CachedInfo {
     pub disk_capacity: u64,
     pub disk_usage: u64,
     pub boot_time: u64,
-    // New: average and maximum CPU speed in MHz
     pub average_cpu_speed_mhz: u64,
     pub max_cpu_speed_mhz: u64,
 }
@@ -34,7 +33,7 @@ pub struct ServiceStatus {
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
-    pub memory: u64, // memory in KB
+    pub memory: u64,
 }
 
 #[derive(Debug, Serialize, Clone, Default)]
@@ -63,15 +62,12 @@ pub struct SystemData {
 impl SystemData {
     pub fn new() -> Self {
         let mut sys = System::new_all();
-        // Refresh once to get initial values.
         sys.refresh_all();
 
-        // Compute disk totals.
         let (total_capacity, total_usage) = sys.disks().iter().fold((0, 0), |(cap, used), disk| {
             (cap + disk.total_space(), used + (disk.total_space() - disk.available_space()))
         });
 
-        // Compute CPU speed from all available CPUs.
         let cpus = sys.cpus();
         let (avg_cpu_speed, max_cpu_speed) = if !cpus.is_empty() {
             let total: u64 = cpus.iter().map(|cpu| cpu.frequency()).sum();
@@ -142,7 +138,12 @@ fn get_processor_info() -> String {
 }
 
 /// Poll system metrics (including the top five memory‐hungry processes)
-pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tokio::sync::watch::Receiver<bool>) {
+/// Now also takes a config_arc to use its `services` list.
+pub async fn poll_system_metrics(
+    data: Arc<Mutex<SystemData>>,
+    config_arc: Arc<RwLock<crate::config_manager::Config>>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>
+) {
     let mut sys = System::new_all();
     loop {
         if *shutdown.borrow() {
@@ -155,7 +156,6 @@ pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tok
         let used_ram = sys.used_memory();
         let available_ram = sys.available_memory();
 
-        // Calculate disk usage.
         let (total_capacity, total_free) = sys.disks().iter().fold((0, 0), |(cap, free), disk| {
             (cap + disk.total_space(), free + disk.available_space())
         });
@@ -164,7 +164,6 @@ pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tok
             used_disk as f32 / total_capacity as f32
         } else { 0.0 };
 
-        // Sum network stats.
         let (mut network_received, mut network_transmitted) = (0, 0);
         for (_iface, data_net) in sys.networks() {
             network_received += data_net.received();
@@ -176,24 +175,24 @@ pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tok
         let swap_total = sys.total_swap();
         let swap_used = sys.used_swap();
 
-        // Check for service statuses.
-        let mut apache_running = false;
-        let mut mariadb_running = false;
-        for process in sys.processes().values() {
-            let proc_name = process.name().to_lowercase();
-            if proc_name.contains("apache2") {
-                apache_running = true;
+        // Use the configured list of services to determine which ones are running.
+        let services: Vec<ServiceStatus> = {
+            let config = config_arc.read().unwrap();
+            let services_to_monitor = config.services.clone().unwrap_or_else(|| vec!["apache2".into(), "mariadb".into()]);
+            let mut statuses: Vec<ServiceStatus> = services_to_monitor.into_iter()
+                .map(|s| ServiceStatus { name: s.clone(), running: false })
+                .collect();
+            for process in sys.processes().values() {
+                let proc_name = process.name().to_lowercase();
+                for status in statuses.iter_mut() {
+                    if proc_name.contains(&status.name.to_lowercase()) {
+                        status.running = true;
+                    }
+                }
             }
-            if proc_name.contains("mariadb") || proc_name.contains("mysql") {
-                mariadb_running = true;
-            }
-        }
-        let services = vec![
-            ServiceStatus { name: "Apache2".into(), running: apache_running },
-            ServiceStatus { name: "MariaDB".into(), running: mariadb_running },
-        ];
+            statuses
+        };
 
-        // Calculate top 5 processes by memory usage.
         let mut processes: Vec<_> = sys.processes().values().collect();
         processes.sort_by(|a, b| b.memory().cmp(&a.memory()));
         let top_processes: Vec<ProcessInfo> = processes.iter().take(5).map(|process| ProcessInfo {
@@ -202,7 +201,6 @@ pub async fn poll_system_metrics(data: Arc<Mutex<SystemData>>, mut shutdown: tok
             memory: process.memory(),
         }).collect();
 
-        // Update CPU speed info on each poll.
         let cpus = sys.cpus();
         let (avg_cpu_speed, max_cpu_speed) = if !cpus.is_empty() {
             let total: u64 = cpus.iter().map(|cpu| cpu.frequency()).sum();

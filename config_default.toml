@@ -9,10 +9,3 @@ description = "Some description of your pylon, visible both locally and remote w
 auto_update = true
 master_update_url = "https://brinstar.top/pylon"
 
-
-[[remote_pylons]]
-ip = "http://www.website.com"
-port = 6989
-token = "some_remote_token"
-name = "Remote Pylon Name"
-

@@ -447,15 +447,11 @@ Below are some placeholder images to showcase the dashboard’s output. Replace 
 
 ---
 
-## Advanced Deployment
+## Advanced Deployment: Systemd Service & Auto-Update Setup
 
-### Systemd Service & Auto-Update Setup
+Pylon Dashboard supports automatic in-place updates and runs as a systemd service. Follow these steps to configure your environment:
 
-Pylon Dashboard supports automatic in-place updates for seamless version upgrades. **By default, auto-updates are disabled** for security reasons. Follow the instructions below to configure a secure deployment and enable auto-updates if desired.
-
-#### 1. Secure Binary Installation
-
-For a secure installation, we recommend placing the binary in a dedicated directory (e.g., `/opt/pylon`):
+### 1. Secure Binary Installation
 
 ```bash
 sudo mkdir -p /opt/pylon
@@ -463,80 +459,101 @@ sudo chown -R www-data:www-data /opt/pylon
 sudo chmod -R 755 /opt/pylon
 ```
 
-Deploy your built binary into this directory:
+Deploy your built binary into `/opt/pylon`:
 
 ```bash
 cp target/x86_64-unknown-linux-musl/release/pylon /opt/pylon/
 sudo chmod +x /opt/pylon/pylon
 ```
 
-#### 2. Create a Systemd Service
+### 2. Setup Helper Shell Script
 
-Create a file at `/etc/systemd/system/pylon.service` with the following content:
+A helper shell script (`setup-pylon.sh`) is provided to create the necessary directories, configure a wrapper script, set up a systemd service, and grant the `www-data` user passwordless sudo access for service management.
 
-```ini
+Place the following script in your project root (it is included on github as well):
+
+```bash
+#!/bin/bash
+# setup-pylon.sh
+#
+# This script sets up /opt/pylon, creates the systemd service,
+# and configures sudoers for auto-update functionality.
+
+# Ensure the script is run as root.
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run as root or with sudo."
+    exit 1
+fi
+
+set -e
+
+echo "Creating /opt/pylon directory..."
+mkdir -p /opt/pylon
+chown www-data:www-data /opt/pylon
+chmod 775 /opt/pylon
+
+echo "Writing the wrapper script /opt/pylon/start-pylon.sh..."
+cat > /opt/pylon/start-pylon.sh << 'EOF'
+#!/bin/bash
+# Wait until the binary is executable, then execute it.
+while [ ! -x /opt/pylon/pylon ]; do
+  echo "Waiting for /opt/pylon/pylon to be executable..."
+  sleep 1
+done
+exec /opt/pylon/pylon
+EOF
+chmod +x /opt/pylon/start-pylon.sh
+
+echo "Writing the systemd service file /etc/systemd/system/pylon.service..."
+cat > /etc/systemd/system/pylon.service << 'EOF'
 [Unit]
 Description=Pylon Dashboard Service
 After=network.target
 
 [Service]
-ExecStart=/opt/pylon/pylon
+ExecStart=/opt/pylon/start-pylon.sh
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/pylon
 Environment=RUST_LOG=actix_web=info
-Restart=on-failure
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+echo "Creating sudoers drop-in for www-data to manage the pylon service..."
+cat > /etc/sudoers.d/pylon << 'EOF'
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl restart pylon, /usr/bin/systemctl start pylon, /usr/bin/systemctl stop pylon
+EOF
+chmod 0440 /etc/sudoers.d/pylon
+
+echo "Reloading systemd daemon..."
+systemctl daemon-reload
+
+echo "Enabling and starting the Pylon service..."
+systemctl enable --now pylon.service
+
+echo "Setup complete. The Pylon service is active and waiting for /opt/pylon/pylon to become executable."
 ```
 
-Reload systemd, enable, and start the service:
+Make the script executable and run it as root:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable pylon
-sudo systemctl start pylon
+sudo chmod +x setup-pylon.sh
+sudo ./setup-pylon.sh
 ```
 
-Verify the status:
+### 3. Auto-Update Behavior
+
+The auto-update mechanism downloads a new binary, writes it to the same directory as the current binary (avoiding cross-device link errors), backs up the current binary as `pylon.old`, replaces it, and restarts the service using `sudo systemctl restart pylon`.
+
+Monitor auto-update logs with:
 
 ```bash
-sudo systemctl status pylon
+sudo journalctl -u pylon.service -f
 ```
-
-#### 3. Enabling Auto-Updates
-
-The auto-update mechanism downloads a new binary, backs up the current one (as `pylon.old`), replaces it, and restarts the service. Because restarting a service requires elevated privileges, you need to grant the service user (e.g., `www-data`) passwordless sudo access for this operation.
-
-1. **Create a Sudoers Rule:**
-
-   Create a file `/etc/sudoers.d/pylon` with the following content:
-
-   ```sudoers
-   www-data ALL=(root) NOPASSWD: /bin/systemctl restart pylon
-   ```
-
-2. **Update Your Configuration:**
-
-   In your `config.toml`, enable auto-updates by setting:
-
-   ```toml
-   auto_update = true
-   master_update_url = "https://your-update-server.com/pylon"
-   ```
-
-   *Note:* Auto-updates are optional. To disable, simply set `auto_update = false`.
-
-3. **Monitoring the Update Process:**
-
-   The updater logs every step of the update process. To monitor updates, use:
-
-   ```bash
-   sudo journalctl -u pylon.service -f
-   ```
-
-   If an update fails, the updater disables further auto-updates and leaves a backup binary (`pylon.old`) in `/opt/pylon` for easy rollback.
 
 ---
 

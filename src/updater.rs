@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, RwLock};
 
@@ -98,9 +97,19 @@ pub async fn check_for_update(config_arc: Arc<RwLock<Config>>) -> Result<bool, B
         return Ok(false);
     }
 
-    // Write the new binary to a temporary file.
-    let mut tmp_path: PathBuf = env::temp_dir();
-    tmp_path.push("pylon_new");
+    // Determine current executable path.
+    let current_exe = match env::current_exe() {
+        Ok(path) => path,
+        Err(e) => {
+            println!("Could not determine current executable path: {}", e);
+            disable_auto_update(&config_arc);
+            return Ok(false);
+        }
+    };
+    println!("Current binary path: {:?}", current_exe);
+
+    // Use the same directory as the current binary for the temporary file.
+    let tmp_path = current_exe.with_file_name("pylon_new");
     println!("Writing new binary to temporary file: {:?}", tmp_path);
 
     if let Err(e) = fs::write(&tmp_path, &data) {
@@ -126,17 +135,6 @@ pub async fn check_for_update(config_arc: Arc<RwLock<Config>>) -> Result<bool, B
         disable_auto_update(&config_arc);
         return Ok(false);
     }
-
-    // Determine current executable path.
-    let current_exe = match env::current_exe() {
-        Ok(path) => path,
-        Err(e) => {
-            println!("Could not determine current executable path: {}", e);
-            disable_auto_update(&config_arc);
-            return Ok(false);
-        }
-    };
-    println!("Current binary path: {:?}", current_exe);
 
     // Verify that the parent directory is writable.
     if let Some(parent) = current_exe.parent() {
