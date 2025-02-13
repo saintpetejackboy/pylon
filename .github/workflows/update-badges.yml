@@ -32,12 +32,18 @@ jobs:
 
       - name: Generate Language Badges
         run: |
-          declare -A COLORS
-          COLORS=( ["Rust"]="orange" ["JavaScript"]="yellow" ["HTML"]="blue" ["CSS"]="blue" )
-
           echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" > README_BADGES.md
-          jq -r --argjson colors "$(declare -p COLORS)" \
-            '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-" + (env.colors[\(.key)] // "blue") + ")](#)"' lang_percent.json >> README_BADGES.md
+          
+          while IFS="=" read -r lang percent; do
+            case "$lang" in
+              Rust) color="orange" ;;
+              JavaScript) color="yellow" ;;
+              HTML) color="blue" ;;
+              CSS) color="blue" ;;
+              *) color="blue" ;;
+            esac
+            echo "[![${lang}](https://img.shields.io/badge/${lang}-${percent}%25-${color})](#)" >> README_BADGES.md
+          done < <(jq -r '.[] | "\(.key)=\(.value | round)"' lang_percent.json)
 
       - name: Debug: Show Generated Badges
         run: cat README_BADGES.md
