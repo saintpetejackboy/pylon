@@ -3,7 +3,7 @@ name: Update Language Badges
 on:
   schedule:
     - cron: '0 0 * * *'  # Runs daily at midnight
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:      # Allow manual trigger
 
 jobs:
   update-badges:
@@ -18,6 +18,8 @@ jobs:
       - name: Get Language Data
         run: |
           curl -s https://api.github.com/repos/saintpetejackboy/pylon/languages > languages.json
+          echo "languages.json content:"
+          cat languages.json
 
       - name: Ensure Rust, CSS, JavaScript, and HTML Always Exist
         run: |
@@ -28,7 +30,14 @@ jobs:
       - name: Calculate Percentages
         run: |
           TOTAL=$(jq '[.[]] | add' languages.json)
-          jq --argjson total "$TOTAL" 'to_entries | map({key: .key, value: ((.value / $total) * 100)})' languages.json > lang_percent.json
+          echo "Total languages: $TOTAL"
+          if [ "$TOTAL" -eq 0 ]; then
+            echo '{"Rust":0,"CSS":0,"JavaScript":0,"HTML":0}' > lang_percent.json
+          else
+            jq --argjson total "$TOTAL" 'to_entries | map({key: .key, value: ((.value / $total) * 100)})' languages.json > lang_percent.json
+          fi
+          echo "lang_percent.json content:"
+          cat lang_percent.json
 
       - name: Debug: Show Generated Language Percentages
         run: cat lang_percent.json
@@ -37,8 +46,7 @@ jobs:
         run: |
           echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" > README_BADGES.md
           
-          jq -r '.[] | "\(.key)=\(.value | round)"' lang_percent.json || echo "Rust=0" > lang_percent.tmp
-
+          # Loop through each language and append its badge
           while IFS="=" read -r lang percent; do
             case "$lang" in
               Rust) color="orange" ;;
@@ -55,8 +63,10 @@ jobs:
 
       - name: Update README.md
         run: |
+          # Remove the current badges block
           awk '/<!-- BADGES_START -->/,/<!-- BADGES_END -->/ {next} {print}' README.md > README_TMP.md
           mv README_TMP.md README.md
+          # Append the new badges block at the end
           echo "<!-- BADGES_START -->" >> README.md
           cat README_BADGES.md >> README.md
           echo "<!-- BADGES_END -->" >> README.md
