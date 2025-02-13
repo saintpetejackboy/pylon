@@ -24,8 +24,11 @@ jobs:
 
       - name: Calculate Percentages
         run: |
-          TOTAL=$(jq 'reduce .[] as $num (0; . + $num)' languages.json)
-          jq 'to_entries | map({key: .key, value: ((.value / $TOTAL) * 100)})' --argjson TOTAL "$TOTAL" languages.json > lang_percent.json
+          TOTAL=$(jq '[.[]] | add' languages.json)
+          jq --argjson total "$TOTAL" 'to_entries | map({key: .key, value: ((.value / $total) * 100)})' languages.json > lang_percent.json
+
+      - name: Debug: Show Generated Language Percentages
+        run: cat lang_percent.json
 
       - name: Generate Language Badges
         run: |
@@ -33,7 +36,11 @@ jobs:
           COLORS=( ["Rust"]="orange" ["JavaScript"]="yellow" ["HTML"]="blue" ["CSS"]="blue" )
 
           echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" > README_BADGES.md
-          jq -r '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-" + (env.COLORS[\(.key)] // "blue") + ")](#)"' lang_percent.json >> README_BADGES.md
+          jq -r --argjson colors "$(declare -p COLORS)" \
+            '.[] | "[![\(.key)](https://img.shields.io/badge/\(.key)-\(.value|round)%25-" + (env.colors[\(.key)] // "blue") + ")](#)"' lang_percent.json >> README_BADGES.md
+
+      - name: Debug: Show Generated Badges
+        run: cat README_BADGES.md
 
       - name: Update README.md
         run: |
@@ -42,6 +49,9 @@ jobs:
           echo "<!-- BADGES_START -->" >> README.md
           cat README_BADGES.md >> README.md
           echo "<!-- BADGES_END -->" >> README.md
+
+      - name: Debug: Show Final README
+        run: cat README.md
 
       - name: Commit & Push Changes
         env:

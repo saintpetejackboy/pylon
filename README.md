@@ -5,7 +5,7 @@
 [![Issues](https://img.shields.io/github/issues/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon/issues)
 
 <!-- BADGES_START -->
-(your dynamic badges will go here)
+
 <!-- BADGES_END -->
 
 
