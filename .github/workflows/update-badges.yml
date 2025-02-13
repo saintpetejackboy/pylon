@@ -63,13 +63,20 @@ jobs:
 
       - name: Update README.md
         run: |
-          # Remove the current badges block
-          awk '/<!-- BADGES_START -->/,/<!-- BADGES_END -->/ {next} {print}' README.md > README_TMP.md
+          # Ensure README.md exists
+          if [ ! -f README.md ]; then
+            echo "ERROR: README.md not found!"
+            exit 1
+          fi
+          # Remove current badges block using sed
+          sed '/<!-- BADGES_START -->/,/<!-- BADGES_END -->/d' README.md > README_TMP.md
           mv README_TMP.md README.md
-          # Append the new badges block at the end
-          echo "<!-- BADGES_START -->" >> README.md
-          cat README_BADGES.md >> README.md
-          echo "<!-- BADGES_END -->" >> README.md
+          # Append the new badges block at the end of the file
+          {
+            echo "<!-- BADGES_START -->"
+            cat README_BADGES.md
+            echo "<!-- BADGES_END -->"
+          } >> README.md
 
       - name: Debug: Show Final README
         run: cat README.md
