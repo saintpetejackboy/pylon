@@ -12,6 +12,9 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Get Language Data
         run: |
           curl -s https://api.github.com/repos/saintpetejackboy/pylon/languages > languages.json
@@ -34,6 +37,8 @@ jobs:
         run: |
           echo "[![Top Language](https://img.shields.io/github/languages/top/saintpetejackboy/pylon)](https://github.com/saintpetejackboy/pylon)" > README_BADGES.md
           
+          jq -r '.[] | "\(.key)=\(.value | round)"' lang_percent.json || echo "Rust=0" > lang_percent.tmp
+
           while IFS="=" read -r lang percent; do
             case "$lang" in
               Rust) color="orange" ;;
@@ -68,7 +73,7 @@ jobs:
           git add README.md
           if ! git diff --cached --exit-code; then
             git commit -m "Auto-update language badges"
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:master
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main
           else
             echo "No changes to commit"
           fi
